@@ -1,0 +1,12 @@
+{
+  "name": "askora-ai",
+  "version": "0.1.0",
+  "description": "ASKORA – Smart AI Assistant with Web Search",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "author": "Bassam Alshtimy",
+  "license": "MIT"
+}
