@@ -7,6 +7,9 @@
   "scripts": {
     "start": "node app.js"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "author": "Bassam Alshtimy",
   "license": "MIT"
 }
