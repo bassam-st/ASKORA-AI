@@ -1,17 +1,28 @@
-export function buildAnswer({ question, intent, context, sourceData }) {
+// answer/answer_builder.js
+export function buildAnswer({ question, intent, context, final = "", sources = [], note = "" }) {
+  const srcText = sources
+    .map((s, idx) => `(${idx + 1}) ${s.title}\n${s.content}`)
+    .join("\n\n");
+
   return `
-السؤال:
+ASKORA – AI Assistant
+
+Question:
 ${question}
 
-النية:
+Intent:
 ${intent}
 
-السياق:
-${context}
+Context:
+${context || "(empty)"}
 
-الإجابة:
-${sourceData}
+Final Answer:
+${final || "(empty)"}
 
-— ASKORA AI
-  `;
+Sources:
+${srcText || "(none)"}
+
+Note:
+${note}
+`.trim();
 }
