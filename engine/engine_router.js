@@ -9,6 +9,7 @@ export async function routeEngine({ text, intent, context }) {
   const safeIntent = String(intent || "").trim();
   const safeContext = String(context || "").trim();
 
+  // 0) تحقق
   if (!question) {
     return buildAnswer({
       question: "",
@@ -20,7 +21,7 @@ export async function routeEngine({ text, intent, context }) {
     });
   }
 
-  // 1) ذاكرة طويلة
+  // 1) الذاكرة الطويلة أولًا
   try {
     const mem = await searchLongTerm(question);
     if (mem?.answer) {
@@ -29,51 +30,69 @@ export async function routeEngine({ text, intent, context }) {
         intent: safeIntent,
         context: safeContext,
         final: String(mem.answer),
-        sources: [{ title: "Long-term memory", content: String(mem.answer), link: "" }],
+        sources: [
+          { title: "Long-term memory", content: String(mem.answer), link: "" },
+        ],
         note: "تمت الإجابة من الذاكرة الطويلة.",
       });
     }
-  } catch {}
-
-  // 2) بحث
-  let sourcesRaw = [];
-  try {
-    sourcesRaw = await webSearch(question, { num: 6 });
   } catch {
-    sourcesRaw = [];
+    // تجاهل مشاكل الذاكرة ولا توقف النظام
   }
 
+  // 2) بحث Google (Fallback أساسي)
+  const needsWeb = true;
+
+  let sourcesRaw = [];
+  if (needsWeb) {
+    try {
+      sourcesRaw = await webSearch(question, { num: 5 });
+    } catch {
+      sourcesRaw = [];
+    }
+  }
+
+  // 2.1) ضمان أن المصادر Array + توحيد شكلها
   const sources = normalizeSources(sourcesRaw);
 
-  // 3) Gemini (اختياري)
+  // 3) محاولة Gemini (قد يفشل بسبب quota)
   let llm = null;
   try {
-    llm = await askoraLLM({ question, intent: safeIntent, context: safeContext, sources });
+    llm = await askoraLLM({
+      question,
+      intent: safeIntent,
+      context: safeContext,
+      sources,
+    });
   } catch (e) {
     llm = { ok: false, text: "", error: cleanErr(e) };
   }
 
-  // 4) جواب نهائي
+  // 4) فولباك تلقائي بدون نموذج
   const finalText =
     llm?.ok && String(llm.text || "").trim()
       ? String(llm.text).trim()
-      : fallbackSynthesize(question, sources);
+      : fallbackSynthesize(sources);
 
-  // لا نعرض JSON الخطأ، فقط سطر بسيط
-  const note = llm?.ok
-    ? "تم توليد الإجابة عبر Gemini."
-    : "Gemini غير متاح حالياً — تم إنشاء ملخص من نتائج البحث.";
+  const note =
+    llm?.ok
+      ? "تم توليد الإجابة عبر Gemini."
+      : `تعذر تشغيل Gemini حالياً. تم استخدام نتائج Google. ${llm?.error ? " (" + llm.error + ")" : ""}`;
 
   return buildAnswer({
     question,
     intent: safeIntent,
     context: safeContext,
     final: finalText,
-    sources,
-    note,
+    sources, // مصادر مضمونة Array
+    note,    // بدون JSON طويل
   });
 }
 
+/**
+ * يوحّد شكل المصادر ويضمن أنها Array من:
+ * { title: string, content: string, link: string }
+ */
 function normalizeSources(input) {
   const arr = Array.isArray(input)
     ? input
@@ -82,41 +101,36 @@ function normalizeSources(input) {
   return arr
     .filter(Boolean)
     .map((s) => {
-      const title = String(s?.title || s?.name || "").trim();
-      const link = String(s?.link || s?.url || "").trim();
-      const content = String(s?.content || s?.snippet || s?.text || "").trim();
-      return { title, link, content };
+      if (typeof s === "string") {
+        return { title: "", content: s, link: "" };
+      }
+      if (typeof s === "object") {
+        const title = String(s.title || s.name || "").trim();
+        const content = String(s.content || s.snippet || s.text || "").trim();
+        const link = String(s.link || s.url || "").trim();
+        return { title, content, link };
+      }
+      return { title: "", content: String(s), link: "" };
     })
-    .filter((s) => s.link || s.content || s.title)
     .slice(0, 8);
 }
 
-// ✅ ملخص نظيف بدون سرد مقاطع غريبة
-function fallbackSynthesize(question, sources) {
+function fallbackSynthesize(sources) {
   const top = Array.isArray(sources) ? sources.slice(0, 5) : [];
-  if (!top.length) return "لم أجد نتائج كافية الآن. جرّب صياغة أخرى.";
 
-  // نأخذ أفضل snippet قصير من أول نتيجتين فقط
-  const bestSnips = top
-    .map(s => cleanSnippet(s.content))
-    .filter(Boolean)
-    .slice(0, 2);
+  // ✅ ملخص “نظيف” بدون إغراق بالروابط
+  const snippets = top
+    .map((s) => String(s?.content || "").trim())
+    .filter(Boolean);
 
-  const first = bestSnips[0] || "";
-  const second = bestSnips[1] ? ("\n" + bestSnips[1]) : "";
+  if (!snippets.length) {
+    return "لم أجد نتائج كافية الآن. حاول بصياغة أخرى أو بعد قليل.";
+  }
 
-  return `ملخص من نتائج البحث عن: "${question}"\n\n${first}${second}`.trim();
-}
-
-function cleanSnippet(text) {
-  let t = String(text || "").replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  // قصّ الطول
-  if (t.length > 260) t = t.slice(0, 260).trim() + "...";
-  return t;
+  return `ملخص ذكي من نتائج البحث:\n- ${snippets.join("\n- ")}`.trim();
 }
 
 function cleanErr(e) {
   const msg = String(e?.message || e || "").trim();
-  return msg.length > 140 ? msg.slice(0, 140) + "..." : msg;
+  return msg.length > 180 ? msg.slice(0, 180) + "..." : msg;
 }
