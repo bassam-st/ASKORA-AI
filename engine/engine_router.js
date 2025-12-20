@@ -30,121 +30,63 @@ export async function routeEngine({ text, intent, context }) {
         intent: safeIntent,
         context: safeContext,
         final: String(mem.answer),
-        sources: [
-          { title: "Long-term memory", content: String(mem.answer), link: "" },
-        ],
+        sources: [{ title: "Long-term memory", content: String(mem.answer), link: "" }],
         note: "تمت الإجابة من الذاكرة الطويلة.",
       });
     }
-  } catch {
+  } catch (e) {
     // تجاهل مشاكل الذاكرة ولا توقف النظام
   }
 
   // 2) بحث Google (Fallback أساسي)
-  // إذا تبي دائمًا بحث: خليها true
-  const needsWeb = true;
-
-  let sourcesRaw = [];
-  if (needsWeb) {
-    try {
-      sourcesRaw = await webSearch(question, { num: 5 });
-    } catch (e) {
-      sourcesRaw = [];
-    }
+  let sources = [];
+  try {
+    sources = await webSearch(question, { num: 5 });
+  } catch (e) {
+    sources = [];
   }
 
-  // 2.1) ضمان أن المصادر Array + توحيد شكلها
-  const sources = normalizeSources(sourcesRaw);
+  // ضمان Array + تنظيف العناصر الفارغة
+  if (!Array.isArray(sources)) sources = [];
+  sources = sources.filter(Boolean);
 
   // 3) محاولة Gemini (قد يفشل بسبب quota)
   let llm = null;
   try {
-    llm = await askoraLLM({
-      question,
-      intent: safeIntent,
-      context: safeContext,
-      sources,
-    });
+    llm = await askoraLLM({ question, intent: safeIntent, context: safeContext, sources });
   } catch (e) {
-    llm = { ok: false, text: "", error: cleanErr(e) };
+    llm = { ok: false, text: "", error: String(e?.message || e) };
   }
 
-  // 4) فولباك تلقائي بدون نموذج
-  const finalText =
-    llm?.ok && String(llm.text || "").trim()
-      ? String(llm.text).trim()
-      : fallbackSynthesize(sources);
-
-  const note =
-    llm?.ok
-      ? "تم توليد الإجابة عبر Gemini."
-      : "تعذر تشغيل Gemini حالياً. تم استخدام نتائج Google.";
+  // 4) فولباك بدون نموذج (ملخص نظيف بدون روابط داخل النص)
+  const finalText = llm?.ok
+    ? String(llm.text || "").trim()
+    : fallbackSynthesize(sources, llm?.error);
 
   return buildAnswer({
     question,
     intent: safeIntent,
     context: safeContext,
     final: finalText,
-    sources, // مهم: الآن مصادر مضمونة Array
-    note,    // مهم: لا نعرض JSON طويل
+    sources,
+    note: llm?.ok
+      ? "تم توليد الإجابة عبر Gemini."
+      : `تعذر تشغيل Gemini: ${llm?.error || "unknown"}. تم استخدام نتائج Google.`,
   });
 }
 
-/**
- * يوحّد شكل المصادر ويضمن أنها Array من:
- * { title: string, content: string, link: string }
- */
-function normalizeSources(input) {
-  const arr = Array.isArray(input)
-    ? input
-    : (input && Array.isArray(input.sources) ? input.sources : []);
-
-  const cleaned = arr
-    .filter(Boolean)
-    .map((s) => {
-      // إذا جاي نص
-      if (typeof s === "string") {
-        return { title: "", content: s, link: "" };
-      }
-
-      // إذا جاي Object
-      if (typeof s === "object") {
-        const title = String(s.title || s.name || "").trim();
-        const content = String(s.content || s.snippet || s.text || "").trim();
-        const link = String(s.link || s.url || "").trim();
-        return { title, content, link };
-      }
-
-      return { title: "", content: String(s), link: "" };
-    })
-    .slice(0, 8); // حد أعلى حتى لا تتضخم الواجهة
-
-  return cleaned;
-}
-
-function fallbackSynthesize(sources) {
+// ✅ ملخص نظيف: يعتمد على القصاصات فقط بدون روابط داخل النص
+function fallbackSynthesize(sources, err = "") {
   const top = Array.isArray(sources) ? sources.slice(0, 5) : [];
 
-  const bullets = top
-    .map((s, i) => {
-      const title = s?.title ? `(${s.title}) ` : "";
-      const snip = s?.content ? s.content : "";
-      const link = s?.link ? `\n${s.link}` : "";
-      const line = `${i + 1}) ${title}${snip}`.trim();
-      return link ? `${line}${link}` : line;
-    })
+  const snippets = top
+    .map((s) => String(s?.content || "").trim())
     .filter(Boolean)
-    .join("\n\n");
+    .slice(0, 5);
 
-  if (!bullets) {
-    return "لم أجد نتائج كافية الآن. حاول بصياغة أخرى أو بعد قليل.";
+  if (!snippets.length) {
+    return `لا تتوفر نتائج كافية حاليًا. ${String(err || "").trim()}`.trim();
   }
 
-  return `ملخص من نتائج Google:\n\n${bullets}`;
-}
-
-function cleanErr(e) {
-  const msg = String(e?.message || e || "").trim();
-  // قصّ الخطأ حتى لا يظهر JSON كامل
-  return msg.length > 180 ? msg.slice(0, 180) + "..." : msg;
+  return `ملخص ذكي من نتائج البحث:\n- ${snippets.join("\n- ")}`.trim();
 }
