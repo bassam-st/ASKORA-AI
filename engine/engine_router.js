@@ -4,6 +4,7 @@ import { buildAnswer } from "../answer/answer_builder.js";
 import { searchLongTerm } from "../memory/memory_store.js";
 import { askoraLLM } from "../llm/askora_llm.js";
 import { smartSummarize } from "../answer/smart_summarizer.js";
+import { classifyIntent } from "../intent/intent_classifier.js";
 
 export async function routeEngine({ text, intent, context }) {
   const question = String(text || "").trim();
@@ -22,13 +23,17 @@ export async function routeEngine({ text, intent, context }) {
     });
   }
 
+  // 0.1) Intent تلقائي لو مش موجود
+  const auto = classifyIntent({ text: question, context: safeContext });
+  const finalIntent = safeIntent || (auto?.intent || "general");
+
   // 1) الذاكرة الطويلة أولاً
   try {
     const mem = await searchLongTerm(question);
     if (mem?.answer) {
       return buildAnswer({
         question,
-        intent: safeIntent,
+        intent: finalIntent,
         context: safeContext,
         final: String(mem.answer),
         sources: [{ title: "Long-term memory", content: String(mem.answer), link: "" }],
@@ -39,7 +44,7 @@ export async function routeEngine({ text, intent, context }) {
     // تجاهل مشاكل الذاكرة
   }
 
-  // 2) بحث Google (دائمًا)
+  // 2) بحث الويب (Fallback أساسي)
   let sourcesRaw = [];
   try {
     sourcesRaw = await webSearch(question, { num: 6 });
@@ -47,7 +52,7 @@ export async function routeEngine({ text, intent, context }) {
     sourcesRaw = [];
   }
 
-  // 2.1) توحيد شكل المصادر
+  // 2.1) توحيد وتنظيف المصادر
   const sources = normalizeSources(sourcesRaw);
 
   // 3) محاولة Gemini (قد يفشل بسبب quota)
@@ -55,7 +60,7 @@ export async function routeEngine({ text, intent, context }) {
   try {
     llm = await askoraLLM({
       question,
-      intent: safeIntent,
+      intent: finalIntent,
       context: safeContext,
       sources,
     });
@@ -63,31 +68,29 @@ export async function routeEngine({ text, intent, context }) {
     llm = { ok: false, text: "", error: cleanErr(e) };
   }
 
-  // 4) إذا Gemini شغال: استخدمه
+  // 4) النتيجة النهائية
+  let finalText = "";
+  let note = "";
+
   if (llm?.ok && String(llm.text || "").trim()) {
-    return buildAnswer({
+    finalText = String(llm.text).trim();
+    note = "تم توليد الإجابة عبر Gemini.";
+  } else {
+    // تلخيص ذكي بدون نموذج
+    finalText = smartSummarize({
       question,
-      intent: safeIntent,
-      context: safeContext,
-      final: String(llm.text).trim(),
+      intent: finalIntent,
       sources,
-      note: "تم توليد الإجابة عبر Gemini.",
     });
+
+    note = llm?.error
+      ? "تعذر تشغيل Gemini حالياً. تم استخدام تلخيص ذكي من نتائج البحث."
+      : "تم استخدام تلخيص ذكي من نتائج البحث.";
   }
-
-  // 5) فولباك "ذكي" بدون نموذج: smartSummarize
-  const finalText = smartSummarize({
-    question,
-    intent: safeIntent,
-    context: safeContext,
-    sources,
-  });
-
-  const note = "تعذر تشغيل Gemini حالياً. تم استخدام تلخيص ذكي من نتائج البحث.";
 
   return buildAnswer({
     question,
-    intent: safeIntent,
+    intent: finalIntent,
     context: safeContext,
     final: finalText,
     sources,
@@ -104,24 +107,62 @@ function normalizeSources(input) {
     ? input
     : (input && Array.isArray(input.sources) ? input.sources : []);
 
-  return arr
+  // فلتر روابط مزعجة (اختياري) - تقدر تزيد
+  const badDomains = [
+    "facebook.com",
+    "m.facebook.com",
+    "x.com",
+    "twitter.com",
+    "tiktok.com",
+    "instagram.com",
+  ];
+
+  const cleaned = arr
     .filter(Boolean)
     .map((s) => {
       if (typeof s === "string") {
         return { title: "", content: s, link: "" };
       }
-      if (typeof s === "object") {
+
+      if (typeof s === "object" && s) {
         const title = String(s.title || s.name || "").trim();
         const content = String(s.content || s.snippet || s.text || "").trim();
         const link = String(s.link || s.url || "").trim();
         return { title, content, link };
       }
+
       return { title: "", content: String(s), link: "" };
     })
+    .filter((s) => {
+      if (!s.link) return true;
+      const u = s.link.toLowerCase();
+      return !badDomains.some((d) => u.includes(d));
+    })
+    .map((s) => ({
+      title: clip(s.title, 120),
+      content: clip(cleanSnippet(s.content), 420),
+      link: clip(s.link, 500),
+    }))
     .slice(0, 8);
+
+  return cleaned;
+}
+
+function cleanSnippet(s = "") {
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .replace(/\uFFFD/g, "")
+    .trim();
+}
+
+function clip(s = "", max = 200) {
+  const t = String(s || "");
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1) + "…";
 }
 
 function cleanErr(e) {
   const msg = String(e?.message || e || "").trim();
-  return msg.length > 160 ? msg.slice(0, 160) + "..." : msg;
+  // قصّ الخطأ حتى لا يظهر JSON كامل
+  return msg.length > 180 ? msg.slice(0, 180) + "…" : msg;
 }
