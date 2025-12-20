@@ -1,63 +1,146 @@
 // tools/web_search.js
-// Google Programmable Search Engine (CSE) search
-// Requires env vars:
-// - GOOGLE_CSE_KEY
-// - GOOGLE_CSE_CX
+// Google Custom Search JSON API
+// يرجّع Array من: { title, content, link }
+// مع فلترة مصادر سيئة + تفضيل مصادر قوية
 
-export async function webSearch(query, { num = 5 } = {}) {
-  const key = process.env.GOOGLE_CSE_KEY;
-  const cx = process.env.GOOGLE_CSE_CX;
+const BLOCKED_DOMAINS = [
+  "facebook.com",
+  "m.facebook.com",
+  "x.com",
+  "twitter.com",
+  "tiktok.com",
+  "instagram.com",
+  "pinterest.com",
+  "snapchat.com",
+  "threads.net",
+  "youtube.com",
+  "youtu.be",
+];
 
-  // دائمًا رجّع Array (حتى لا يظهر خطأ sources.slice(...).map)
-  if (!key || !cx) {
-    return [
-      {
-        title: "Search not configured",
-        link: "",
-        content:
-          "Missing GOOGLE_CSE_KEY or GOOGLE_CSE_CX in Vercel Environment Variables.",
-      },
-    ];
+const PREFERRED_DOMAINS = [
+  "wikipedia.org",
+  "britannica.com",
+  "un.org",
+  "who.int",
+  "unicef.org",
+  "worldbank.org",
+  "imf.org",
+  "oecd.org",
+  "undp.org",
+  "reliefweb.int",
+  "cia.gov",
+  "state.gov",
+];
+
+function getDomain(url = "") {
+  try {
+    const u = new URL(url);
+    return (u.hostname || "").replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
   }
+}
 
+function isBlocked(url = "") {
+  const d = getDomain(url);
+  if (!d) return false;
+  return BLOCKED_DOMAINS.some((x) => d === x || d.endsWith("." + x));
+}
+
+function scorePreferred(url = "") {
+  const d = getDomain(url);
+  if (!d) return 0;
+  return PREFERRED_DOMAINS.some((x) => d === x || d.endsWith("." + x)) ? 10 : 0;
+}
+
+function normalizeItem(item) {
+  const title = String(item?.title || "").trim();
+  const link = String(item?.link || "").trim();
+  const content = String(item?.snippet || item?.htmlSnippet || "").trim();
+  return { title, link, content };
+}
+
+async function fetchWithTimeout(url, { timeoutMs = 12000 } = {}) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * webSearch
+ * @param {string} query
+ * @param {Object} opts
+ * @param {number} opts.num
+ * @returns {Promise<Array<{title:string, content:string, link:string}>>}
+ */
+export async function webSearch(query, { num = 5 } = {}) {
   const q = String(query || "").trim();
   if (!q) return [];
 
-  const n = Math.max(1, Math.min(Number(num) || 5, 10));
+  const key = (process?.env?.GOOGLE_CSE_KEY || "").trim();
+  const cx = (process?.env?.GOOGLE_CSE_CX || "").trim();
+
+  if (!key || !cx) {
+    // بدون مفاتيح: ما نرمي خطأ كبير للمستخدم
+    return [];
+  }
+
+  const n = Math.max(1, Math.min(10, Number(num || 5)));
+
+  // hl=ar تعريب، gl=ye أو sa حسب رغبتك (هنا ye)
   const url =
     "https://www.googleapis.com/customsearch/v1" +
     `?key=${encodeURIComponent(key)}` +
     `&cx=${encodeURIComponent(cx)}` +
     `&q=${encodeURIComponent(q)}` +
-    `&num=${encodeURIComponent(n)}`;
+    `&num=${n}` +
+    `&hl=ar` +
+    `&gl=ye` +
+    `&safe=active`;
 
-  const res = await fetch(url, { method: "GET" });
+  const res = await fetchWithTimeout(url, { timeoutMs: 12000 });
 
   if (!res.ok) {
-    const t = await safeText(res);
-    return [
-      {
-        title: "Google Search Error",
-        link: "",
-        content: `HTTP ${res.status}: ${t}`,
-      },
-    ];
+    // لا نكبّر الخطأ (خصوصاً 429/403)
+    return [];
   }
 
-  const data = await res.json();
+  const data = await res.json().catch(() => null);
   const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) return [];
 
-  return items.slice(0, n).map((it) => ({
-    title: it?.title || "Result",
-    link: it?.link || "",
-    content: it?.snippet || "",
+  // Normalize + فلترة
+  let out = items.map(normalizeItem).filter((x) => x.link && !isBlocked(x.link));
+
+  // ترتيب: المفضلة أولاً
+  out = out
+    .map((x) => ({ ...x, _p: scorePreferred(x.link) }))
+    .sort((a, b) => (b._p || 0) - (a._p || 0))
+    .map(({ _p, ...rest }) => rest);
+
+  // قصّ المحتوى
+  out = out.map((x) => ({
+    title: x.title,
+    link: x.link,
+    content: String(x.content || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300),
   }));
-}
 
-async function safeText(res) {
-  try {
-    return await res.text();
-  } catch {
-    return "";
-  }
+  // إزالة تكرار نفس الرابط
+  const seen = new Set();
+  out = out.filter((x) => {
+    if (seen.has(x.link)) return false;
+    seen.add(x.link);
+    return true;
+  });
+
+  return out.slice(0, n);
 }
