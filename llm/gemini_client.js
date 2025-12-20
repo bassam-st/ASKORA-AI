@@ -1,9 +1,9 @@
 // llm/gemini_client.js
-// Gemini API (Free tier available) — requires env var: GEMINI_API_KEY
-// Node 18+ has fetch built-in.
+// Gemini API — requires env var: GEMINI_API_KEY
+// This version tries multiple API versions + multiple model names to avoid 404 model issues.
 
 export async function geminiGenerate({
-  model = "gemini-1.5-flash",
+  model = "auto",
   system = "",
   prompt = "",
   temperature = 0.4,
@@ -11,17 +11,24 @@ export async function geminiGenerate({
 }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
-    return {
-      ok: false,
-      text: "",
-      error: "Missing GEMINI_API_KEY env var",
-    };
+    return { ok: false, text: "", error: "Missing GEMINI_API_KEY env var" };
   }
 
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      model
-    )}:generateContent?key=${encodeURIComponent(key)}`;
+  // ✅ نماذج احتياطية (جرّبها بالترتيب)
+  const modelCandidates = [];
+  if (model && model !== "auto") modelCandidates.push(model);
+
+  modelCandidates.push(
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-pro",
+    "gemini-1.5-pro-latest",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite"
+  );
+
+  // ✅ جرّب نسختين API
+  const apiVersions = ["v1beta", "v1"];
 
   const body = {
     contents: [
@@ -36,26 +43,45 @@ export async function geminiGenerate({
     },
   };
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  let lastErr = "";
 
-    if (!res.ok) {
-      const errText = await safeText(res);
-      return { ok: false, text: "", error: `Gemini HTTP ${res.status}: ${errText}` };
+  for (const ver of apiVersions) {
+    for (const m of modelCandidates) {
+      const url =
+        `https://generativelanguage.googleapis.com/${ver}/models/${encodeURIComponent(
+          m
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const errText = await safeText(res);
+          lastErr = `Gemini HTTP ${res.status} (${ver}/${m}): ${errText}`;
+          continue; // جرّب موديل/نسخة ثانية
+        }
+
+        const data = await res.json();
+        const text =
+          data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("")?.trim() || "";
+
+        if (!text) {
+          lastErr = `Empty response (${ver}/${m})`;
+          continue;
+        }
+
+        return { ok: true, text, error: "" };
+      } catch (e) {
+        lastErr = String(e?.message || e);
+      }
     }
-
-    const data = await res.json();
-    const text =
-      data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("")?.trim() || "";
-
-    return { ok: true, text, error: "" };
-  } catch (e) {
-    return { ok: false, text: "", error: String(e?.message || e) };
   }
+
+  return { ok: false, text: "", error: lastErr || "Gemini error" };
 }
 
 async function safeText(res) {
