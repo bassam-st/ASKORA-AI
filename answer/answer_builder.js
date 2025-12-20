@@ -1,28 +1,40 @@
 // answer/answer_builder.js
-export function buildAnswer({ question, intent, context, final = "", sources = [], note = "" }) {
-  const srcText = sources
-    .map((s, idx) => `(${idx + 1}) ${s.title}\n${s.content}`)
-    .join("\n\n");
 
-  return `
-ASKORA – AI Assistant
+export function buildAnswer({
+  question = "",
+  intent = "",
+  context = "",
+  final = "",
+  sources = [],
+  note = "",
+}) {
+  // ✅ حماية مطلقة: sources لازم يكون Array
+  let safeSources = [];
 
-Question:
-${question}
+  if (Array.isArray(sources)) {
+    safeSources = sources;
+  } else if (Array.isArray(sources?.sources)) {
+    safeSources = sources.sources;
+  } else {
+    safeSources = [];
+  }
 
-Intent:
-${intent}
+  // تنظيف المصادر (نص فقط)
+  const cleanedSources = safeSources.map((s) => {
+    if (typeof s === "string") return s;
+    if (typeof s === "object") {
+      return s.title || s.content || JSON.stringify(s);
+    }
+    return String(s);
+  });
 
-Context:
-${context || "(empty)"}
-
-Final Answer:
-${final || "(empty)"}
-
-Sources:
-${srcText || "(none)"}
-
-Note:
-${note}
-`.trim();
+  return {
+    ok: true,
+    question,
+    intent,
+    context,
+    answer: final,
+    sources: cleanedSources,
+    note,
+  };
 }
