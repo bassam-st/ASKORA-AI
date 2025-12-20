@@ -1,47 +1,52 @@
 // api/askora.js
-import { handleAskora } from "../app.js";
+import { routeEngine } from "../engine/engine_router.js";
+import { normalizeInput } from "../input/input_normalizer.js";
 
 export default async function handler(req, res) {
-  // السماح فقط بـ POST
-  if (req.method !== "POST") {
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
-  }
-
   try {
-    const { question } = req.body || {};
-    const q = (question || "").toString().trim();
+    // CORS بسيط (اختياري)
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+      return res.status(200).json({ ok: true });
+    }
+
+    if (req.method !== "POST") {
+      return res.status(405).json({ ok: false, error: "Method not allowed" });
+    }
+
+    const body = req.body || {};
+    const q = String(body.question || body.text || "").trim();
 
     if (!q) {
-      return res.status(400).json({ ok: false, error: "Empty question" });
+      return res.status(200).json({ ok: true, answer: "السؤال فارغ.", sources: [], note: "no_question" });
     }
 
-    const out = await handleAskora(q);
+    const cleaned = normalizeInput({ text: q, context: body.context || "" });
 
-    // لو رجّع نص فقط
-    if (typeof out === "string") {
-      return res.status(200).json({
-        ok: true,
-        answer: out,
-        sources: [],
-      });
-    }
+    const out = await routeEngine({
+      text: cleaned.text,
+      intent: body.intent || "",
+      context: cleaned.context || "",
+    });
 
-    // لو رجّع Object (المفروض)
-    if (out && typeof out === "object") {
-      // نضمن شكل ثابت
-      return res.status(200).json({
-        ok: true,
-        answer: String(out.answer ?? out.final ?? ""),
-        sources: Array.isArray(out.sources) ? out.sources : [],
-        note: out.note || "",
-        intent: out.intent || "",
-      });
-    }
-
-    return res.status(200).json({ ok: true, answer: String(out || ""), sources: [] });
-  } catch (err) {
-    return res
-      .status(500)
-      .json({ ok: false, error: err?.message || "Server error" });
+    // ضمان مخرجات واجهة ثابتة
+    return res.status(200).json({
+      ok: true,
+      answer: String(out?.answer || ""),
+      sources: Array.isArray(out?.sources) ? out.sources : [],
+      note: String(out?.note || ""),
+      intent: String(out?.intent || ""),
+    });
+  } catch (e) {
+    // ✅ مهما صار: JSON
+    return res.status(200).json({
+      ok: false,
+      error: "Server error",
+      message: String(e?.message || e || ""),
+    });
   }
 }
