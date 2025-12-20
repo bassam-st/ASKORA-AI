@@ -44,10 +44,10 @@ export async function routeEngine({ text, intent, context }) {
     // تجاهل مشاكل الذاكرة
   }
 
-  // 2) بحث الويب (Fallback أساسي)
+  // 2) بحث الويب (Fallback أساسي) ✅ مع intent
   let sourcesRaw = [];
   try {
-    sourcesRaw = await webSearch(question, { num: 6 });
+    sourcesRaw = await webSearch(question, { num: 6, intent: finalIntent });
   } catch {
     sourcesRaw = [];
   }
@@ -107,7 +107,7 @@ function normalizeSources(input) {
     ? input
     : (input && Array.isArray(input.sources) ? input.sources : []);
 
-  // فلتر روابط مزعجة (اختياري) - تقدر تزيد
+  // فلتر روابط مزعجة (اختياري)
   const badDomains = [
     "facebook.com",
     "m.facebook.com",
@@ -163,6 +163,5 @@ function clip(s = "", max = 200) {
 
 function cleanErr(e) {
   const msg = String(e?.message || e || "").trim();
-  // قصّ الخطأ حتى لا يظهر JSON كامل
   return msg.length > 180 ? msg.slice(0, 180) + "…" : msg;
 }
