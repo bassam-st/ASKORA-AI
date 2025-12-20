@@ -1,5 +1,4 @@
 // answer/answer_builder.js
-
 export function buildAnswer({
   question = "",
   intent = "",
@@ -7,25 +6,23 @@ export function buildAnswer({
   final = "",
   sources = [],
   note = "",
-}) {
-  // ✅ حماية مطلقة: sources لازم يكون Array
+} = {}) {
+  // ✅ تأمين: sources لازم Array
   let safeSources = [];
+  if (Array.isArray(sources)) safeSources = sources;
+  else if (Array.isArray(sources?.sources)) safeSources = sources.sources;
+  else safeSources = [];
 
-  if (Array.isArray(sources)) {
-    safeSources = sources;
-  } else if (Array.isArray(sources?.sources)) {
-    safeSources = sources.sources;
-  } else {
-    safeSources = [];
-  }
-
-  // تنظيف المصادر (نص فقط)
   const cleanedSources = safeSources.map((s) => {
-    if (typeof s === "string") return s;
-    if (typeof s === "object") {
-      return s.title || s.content || JSON.stringify(s);
+    if (typeof s === "string") return { title: "source", link: "", content: s };
+    if (typeof s === "object" && s) {
+      return {
+        title: String(s.title || "source"),
+        link: String(s.link || ""),
+        content: String(s.content || ""),
+      };
     }
-    return String(s);
+    return { title: "source", link: "", content: String(s) };
   });
 
   return {
