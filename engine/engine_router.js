@@ -1,169 +1,94 @@
 // engine/engine_router.js
-
 import { webSearch } from "../tools/web_search.js";
 import { buildAnswer } from "../answer/answer_builder.js";
 import { searchLongTerm } from "../memory/memory_store.js";
 import { askoraLLM } from "../llm/askora_llm.js";
 
-/* =========================================================
-   نظام حدّ يومي + تحويل تلقائي للبحث المجاني
-   ========================================================= */
-
-// ملاحظة: هذا تخزين مؤقت (In-Memory)
-// مناسب كبداية – على Vercel قد يُعاد تعيينه أحيانًا
-const QUOTA = (globalThis.__ASKORA_QUOTA ||= new Map());
-
-function todayKey() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function getDailyLimit() {
-  const n = Number(process.env.DAILY_AI_LIMIT || "20"); // افتراضي 20 سؤال يوميًا
-  return Number.isFinite(n) && n > 0 ? n : 20;
-}
-
-function getUsedToday() {
-  const key = todayKey();
-  return Number(QUOTA.get(key) || 0);
-}
-
-function incrementUsage() {
-  const key = todayKey();
-  QUOTA.set(key, getUsedToday() + 1);
-}
-
-function quotaExceeded() {
-  return getUsedToday() >= getDailyLimit();
-}
-
-/* =========================================================
-   توليد إجابة مجانية من البحث فقط (بدون LLM)
-   ========================================================= */
-function webOnlyAnswer(question, sources) {
-  if (!Array.isArray(sources) || sources.length === 0) {
-    return `لم أجد نتائج كافية الآن.\nحاول إعادة صياغة السؤال: "${question}"`;
-  }
-
-  const bullets = sources.slice(0, 5).map((s, i) => {
-    const title = (s?.title || `مصدر ${i + 1}`).toString();
-    const content = (s?.content || "").toString();
-    const short = content.length > 300 ? content.slice(0, 300) + "..." : content;
-    return `• ${title}: ${short}`;
-  });
-
-  return `هذه خلاصة من نتائج البحث:\n${bullets.join("\n")}`;
-}
-
-/* =========================================================
-   الموجّه الرئيسي
-   ========================================================= */
 export async function routeEngine({ text, intent, context }) {
-  /* 1) الذاكرة الطويلة */
-  const mem = await searchLongTerm(text);
-  if (mem) {
+  const question = String(text || "").trim();
+
+  // 0) تحقق
+  if (!question) {
     return buildAnswer({
-      question: text,
-      intent,
-      context,
-      final: mem.answer,
-      sources: [{ title: "Long-term memory", content: mem.answer }],
-      note: "تمت الإجابة من الذاكرة الطويلة.",
+      question: "",
+      intent: intent || "",
+      context: context || "",
+      final: "السؤال فارغ.",
+      sources: [],
+      note: "تم رفض الطلب لأن السؤال فارغ.",
     });
   }
 
-  /* 2) هل نحتاج بحث ويب؟ */
-  const needsWeb =
-    intent === "news_or_recent" ||
-    intent === "general_search" ||
-    intent === "price";
+  // 1) الذاكرة الطويلة أولًا
+  try {
+    const mem = await searchLongTerm(question);
+    if (mem?.answer) {
+      return buildAnswer({
+        question,
+        intent,
+        context,
+        final: mem.answer,
+        sources: [{ title: "Long-term memory", content: mem.answer, link: "" }],
+        note: "تمت الإجابة من الذاكرة الطويلة.",
+      });
+    }
+  } catch (e) {
+    // تجاهل مشاكل الذاكرة ولا توقف النظام
+  }
+
+  // 2) بحث Google (نستخدمه كـ fallback أساسي)
+  const needsWeb = true; // خليها دائمًا true عشان يشتغل البحث لأي سؤال
 
   let sources = [];
   if (needsWeb) {
-    sources = await webSearch(text);
-  } else {
-    sources = [
-      {
-        title: "Local reasoning",
-        content: "هذا السؤال لا يتطلب بحثًا على الإنترنت.",
-      },
-    ];
+    sources = await webSearch(question, { num: 5 });
   }
 
-  /* 3) إذا انتهى الحد اليومي → بحث مجاني فقط */
-  if (quotaExceeded()) {
-    return buildAnswer({
-      question: text,
-      intent,
-      context,
-      final: webOnlyAnswer(text, sources),
-      sources,
-      note: `تم تجاوز الحد اليومي (${getDailyLimit()} سؤال). تم التحويل تلقائيًا إلى البحث المجاني.`,
-    });
+  // ضمان Array
+  if (!Array.isArray(sources)) sources = [];
+  sources = sources.filter(Boolean);
+
+  // 3) محاولة Gemini (قد يفشل بسبب quota)
+  let llm = null;
+  try {
+    llm = await askoraLLM({ question, intent, context, sources });
+  } catch (e) {
+    llm = { ok: false, text: "", error: String(e?.message || e) };
   }
 
-  /* 4) محاولة الذكاء الاصطناعي (Gemini) */
-  const llm = await askoraLLM({
-    question: text,
-    intent,
-    context,
-    sources,
-  });
-
-  // فشل Gemini (خصوصًا 429 / quota)
-  if (!llm.ok) {
-    const err = String(llm.error || "");
-
-    if (
-      err.includes("429") ||
-      err.includes("quota") ||
-      err.includes("RESOURCE_EXHAUSTED")
-    ) {
-      incrementUsage(); // نحسبها كمحاولة AI
-      return buildAnswer({
-        question: text,
-        intent,
-        context,
-        final: webOnlyAnswer(text, sources),
-        sources,
-        note: "تم تجاوز حصة Gemini، تم التحويل تلقائيًا للبحث المجاني.",
-      });
-    }
-
-    // فشل آخر
-    return buildAnswer({
-      question: text,
-      intent,
-      context,
-      final: fallbackAnswer(intent, sources, err),
-      sources,
-      note: `تعذر تشغيل Gemini: ${err}`,
-    });
-  }
-
-  /* 5) نجاح Gemini */
-  incrementUsage();
+  // 4) فولباك تلقائي بدون نموذج
+  const finalText = llm?.ok
+    ? llm.text
+    : fallbackSynthesize(intent, sources, llm?.error);
 
   return buildAnswer({
-    question: text,
+    question,
     intent,
     context,
-    final: llm.text,
+    final: finalText,
     sources,
-    note: `تم توليد الإجابة بالذكاء الاصطناعي (${getUsedToday()}/${getDailyLimit()} اليوم).`,
+    note: llm?.ok
+      ? "تم توليد الإجابة عبر Gemini."
+      : `تعذر تشغيل Gemini: ${llm?.error || "unknown"}. تم استخدام نتائج Google.`,
   });
 }
 
-/* =========================================================
-   فولباك بسيط
-   ========================================================= */
-function fallbackAnswer(intent, sources, err = "") {
-  const first = sources?.[0]?.content || "";
-  if (intent === "compare") return `للمقارنة: اذكر خيارين (A و B).\n${first}`;
-  if (intent === "price") return `تنبيه: الأسعار تتغير.\n${first}`;
-  if (intent === "news_or_recent") return `تنبيه: الأخبار متغيرة.\n${first}`;
-  return first || `تعذر توليد إجابة الآن.\n${err}`;
+function fallbackSynthesize(intent, sources, err = "") {
+  const top = Array.isArray(sources) ? sources.slice(0, 5) : [];
+
+  const bullets = top
+    .map((s, i) => {
+      const title = s?.title ? `(${s.title})` : "";
+      const snip = s?.content ? s.content : "";
+      const link = s?.link ? ` - ${s.link}` : "";
+      return `${i + 1}) ${title} ${snip}${link}`.trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  if (!bullets) {
+    return `لم أجد نتائج كافية الآن. ${err}`.trim();
+  }
+
+  return `ملخص من نتائج Google:\n${bullets}`;
 }
