@@ -1,395 +1,186 @@
 // answer/smart_summarizer.js
-// Smart Summarizer (No LLM) — Level 2 (Style 3)
-// 1) جواب مباشر
-// 2) ملخص
-// 3) نقاط مهمة
-// 4) أرقام/تواريخ (إن وجدت)
-// 5) ملاحظة/تحذير
-//
-// Level 2 adds:
-// - better cleaning & de-dup
-// - extracting numbers & dates
-// - stronger templates per intent
-// - basic "weak snippet" handling
+// Smart Summarizer (Level 2) - بدون نموذج
+// الهدف: يعطي جواب مختصر + نقاط مهمة + يعتمد على أفضل snippets من الويب
+// مدخلاته: { question, intent, sources } حيث sources: [{title, content, link}]
 
-const TRUSTED_DOMAINS = [
-  "wikipedia.org",
-  "britannica.com",
-  "un.org",
-  "who.int",
-  "unicef.org",
-  "worldbank.org",
-  "imf.org",
-  "oecd.org",
-  "undp.org",
-  "reliefweb.int",
-  "data.un.org",
-  "cia.gov",
-  "state.gov",
-  "gov",
-];
-
-const BAD_HINTS = [
-  "facebook",
-  "twitter",
-  "x.com",
-  "tiktok",
-  "instagram",
-  "threads",
-  "pinterest",
-  "#",
-  "@",
-];
-
-function guessIntent(question = "") {
-  const q = String(question || "").trim();
-
-  // عربي
-  if (/^(من هو|من هي|من)\b/.test(q)) return "who_is";
-  if (/^(ما هو|ما هي|ما معنى|اشرح|عرّف|عرف)\b/.test(q)) return "define";
-  if (/^(أين|اين)\b/.test(q)) return "where";
-  if (/^(كيف)\b/.test(q)) return "how";
-  if (/^(لماذا|ليش)\b/.test(q)) return "why";
-  if (/(كم)\b/.test(q)) return "how_many";
-
-  // إنجليزي
-  if (/^\s*(who|who is)\b/i.test(q)) return "who_is";
-  if (/^\s*(what|what is)\b/i.test(q)) return "define";
-  if (/^\s*(where)\b/i.test(q)) return "where";
-  if (/^\s*(how)\b/i.test(q)) return "how";
-  if (/^\s*(why)\b/i.test(q)) return "why";
-  if (/^\s*(how many|how much)\b/i.test(q)) return "how_many";
-
-  return "general";
+function cleanText(s = "") {
+  return String(s || "")
+    .replace(/<[^>]*>/g, " ")        // إزالة HTML لو موجود
+    .replace(/\uFFFD/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function getDomain(url = "") {
-  try {
-    const u = new URL(url);
-    return (u.hostname || "").replace(/^www\./, "").toLowerCase();
-  } catch {
-    return "";
-  }
+function splitSentences(text = "") {
+  const t = cleanText(text);
+  if (!t) return [];
+  // تقسيم عربي/إنجليزي بسيط
+  return t
+    .split(/(?<=[\.\!\?\u061F\u06D4])\s+|[\n•\-]+/g)
+    .map((x) => cleanText(x))
+    .filter((x) => x.length >= 20);
 }
 
-function scoreSource(s) {
-  const link = String(s?.link || "");
-  const domain = getDomain(link);
+function tokenize(s = "") {
+  const t = cleanText(s).toLowerCase();
+  // كلمات بدون رموز
+  const raw = t.split(/[^a-z0-9\u0600-\u06FF]+/g).filter(Boolean);
 
-  let score = 0;
+  // كلمات توقف بسيطة (عربي/إنجليزي)
+  const stop = new Set([
+    "في","من","على","الى","إلى","عن","هو","هي","هذا","هذه","ذلك","تلك","ما","ماذا","كيف","كم","أين","اين",
+    "the","a","an","is","are","of","to","in","on","for","and","or","with","by","as"
+  ]);
 
-  if (domain) {
-    if (TRUSTED_DOMAINS.some((d) => domain === d || domain.endsWith("." + d))) score += 50;
-    if (domain.includes("wikipedia.org")) score += 15;
-  }
-
-  const titleLen = String(s?.title || "").trim().length;
-  const contLen = String(s?.content || "").trim().length;
-  score += Math.min(10, titleLen / 12);
-  score += Math.min(20, contLen / 25);
-
-  if (!link) score -= 10;
-  if (!String(s?.content || "").trim()) score -= 10;
-
-  return score;
+  return raw.filter(w => w.length >= 2 && !stop.has(w));
 }
 
-function cleanText(t = "") {
-  let x = String(t || "");
-  x = x.replace(/\uFFFD/g, "");
-  x = x.replace(/<[^>]*>/g, " "); // remove html
-  x = x.replace(/[•●■►▶]/g, " ");
-  x = x.replace(/\s+/g, " ").trim();
-  return x;
+function jaccard(aTokens, bTokens) {
+  const a = new Set(aTokens);
+  const b = new Set(bTokens);
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  const union = a.size + b.size - inter;
+  return union ? inter / union : 0;
 }
 
-function clip(t = "", max = 320) {
-  const x = String(t || "").trim();
-  if (!x) return "";
-  if (x.length <= max) return x;
-  return x.slice(0, max - 1).trim() + "…";
-}
-
-function looksBadLine(line = "") {
-  const l = String(line || "").toLowerCase();
-  if (!l) return true;
-  if (l.length < 10) return true;
-  if (BAD_HINTS.some((h) => l.includes(h))) return true;
-  // كثير رموز/روابط
-  if ((l.match(/http/g) || []).length >= 1) return true;
-  // عبارات "انقر هنا" الخ
-  if (/(click|open|اضغط|انقر|تابع|شاهد)/i.test(l)) return true;
-  return false;
-}
-
-function normalizeArabicDigits(s = "") {
-  // تحويل الأرقام العربية الهندية إلى 0-9
-  const map = {
-    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
-    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
-  };
-  return String(s || "").replace(/[٠-٩]/g, (d) => map[d] || d);
-}
-
-function dedupeLines(lines = []) {
+function uniqByNormalized(arr) {
   const seen = new Set();
   const out = [];
-  for (const line of lines) {
-    const key = normalizeArabicDigits(String(line || ""))
-      .toLowerCase()
-      .replace(/https?:\/\/\S+/g, "")
-      .replace(/[^\p{L}\p{N} ]/gu, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    if (!key) continue;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(line);
+  for (const x of arr) {
+    const k = cleanText(x).toLowerCase();
+    if (!k) continue;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(x);
   }
   return out;
 }
 
-function extractCandidateLines(bestSources) {
-  const candidate = [];
-  for (const s of bestSources) {
-    const title = clip(cleanText(s?.title || ""), 220);
-    const content = clip(cleanText(s?.content || ""), 420);
-    if (title) candidate.push(title);
-    if (content) candidate.push(content);
-  }
+function pickBestSentences(question, sources) {
+  const qTok = tokenize(question);
 
-  const cleaned = dedupeLines(
-    candidate
-      .map((x) => clip(cleanText(x), 320))
-      .filter((x) => x && !looksBadLine(x))
-  );
+  // اجمع جمل من كل مصدر
+  const pool = [];
+  for (const s of sources) {
+    const title = cleanText(s?.title || "");
+    const content = cleanText(s?.content || "");
+    const link = cleanText(s?.link || "");
 
-  return cleaned.slice(0, 8);
-}
+    const sentences = splitSentences(`${title}. ${content}`);
+    for (const sent of sentences) {
+      const score =
+        jaccard(tokenize(sent), qTok) +
+        (title ? 0.05 : 0) +
+        (link ? 0.03 : 0);
 
-function extractNumbersAndDates(lines = []) {
-  const nums = new Set();
-  const dates = new Set();
-
-  const dateRegex1 = /\b(19\d{2}|20\d{2})\b/g; // years
-  const dateRegex2 = /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g; // 12/08/2024
-  const arabMonth = /(يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)/;
-
-  // أرقام عامة (مع وحدات بسيطة)
-  const numRegex = /\b\d{1,3}(?:[,\.\s]\d{3})*(?:\.\d+)?\b/g;
-
-  for (const raw of lines) {
-    const s = normalizeArabicDigits(String(raw || ""));
-    // سنوات
-    const y = s.match(dateRegex1) || [];
-    y.forEach((x) => dates.add(x));
-
-    // تواريخ رقمية
-    const d2 = s.match(dateRegex2) || [];
-    d2.forEach((x) => dates.add(x));
-
-    // تواريخ عربية شهر + سنة
-    if (arabMonth.test(s)) {
-      // خذ جملة قصيرة فيها الشهر
-      const idx = s.search(arabMonth);
-      const snippet = clip(s.slice(Math.max(0, idx - 30), idx + 40), 90);
-      if (snippet) dates.add(snippet);
+      pool.push({ sent, score, link, title });
     }
-
-    // أرقام
-    const n = s.match(numRegex) || [];
-    n.forEach((x) => {
-      const v = x.replace(/\s/g, "").replace(/,/g, "");
-      // تجاهل أرقام قصيرة جدًا
-      if (v.length >= 2) nums.add(v);
-    });
   }
 
-  // حد أقصى
-  return {
-    numbers: Array.from(nums).slice(0, 6),
-    dates: Array.from(dates).slice(0, 6),
-  };
+  // ترتيب حسب الأفضل
+  pool.sort((a, b) => (b.score - a.score));
+
+  // إزالة تكرار الجمل المتشابهة
+  const picked = [];
+  for (const item of pool) {
+    if (picked.length >= 8) break;
+    const tooSimilar = picked.some(p => jaccard(tokenize(p.sent), tokenize(item.sent)) > 0.82);
+    if (tooSimilar) continue;
+    picked.push(item);
+  }
+
+  return picked;
 }
 
-function pickDirectAnswer(intent, question, lines) {
-  const q = String(question || "").trim();
-  const first = lines[0] || "";
-  const second = lines[1] || "";
+function inferShortAnswer(question, best) {
+  // لو في جملة قوية جدًا، خذ منها "جواب مختصر"
+  if (!best.length) return "";
 
-  if (!first) return `بخصوص: "${q}" — هذه خلاصة من أفضل النتائج المتاحة.`;
+  // أفضل جملة
+  const top = best[0].sent;
 
-  if (intent === "where") {
-    // حاول اختيار سطر فيه "تقع/يقع/located"
-    const whereLine = lines.find((l) => /(تقع|يقع|located|location|تقع في|يقع في)/i.test(l));
-    if (whereLine) return whereLine;
-    return `الموقع باختصار: ${first}`;
-  }
+  // قص ذكي: إذا طويلة، نأخذ أول 220 حرف تقريبًا
+  const t = cleanText(top);
+  if (t.length <= 220) return t;
 
-  if (intent === "define") {
-    const defLine = lines.find((l) => /(هو|هي|تعريف|meaning|definition|is a)/i.test(l));
-    if (defLine) return defLine;
-    return `التعريف باختصار: ${first}`;
-  }
-
-  if (intent === "who_is") {
-    const whoLine = lines.find((l) => /(هو|هي|ولد|birth|known|is a)/i.test(l));
-    if (whoLine) return whoLine;
-    return `نبذة مختصرة: ${first}`;
-  }
-
-  if (intent === "how") {
-    // اختر سطر يشبه خطوات/طريقة
-    const howLine = lines.find((l) => /(طريقة|خطوات|step|how to|قم|افتح|ثبت)/i.test(l));
-    if (howLine) return howLine;
-    return `أفضل طريقة مختصرة حسب النتائج: ${first}`;
-  }
-
-  if (intent === "why") {
-    const whyLine = lines.find((l) => /(سبب|because|due to|لأن)/i.test(l));
-    if (whyLine) return whyLine;
-    return `السبب المختصر حسب النتائج: ${first}`;
-  }
-
-  if (intent === "how_many") {
-    // اختر سطر فيه رقم إن وجد
-    const numLine = lines.find((l) => /\d/.test(normalizeArabicDigits(l)));
-    if (numLine) return numLine;
-    return second ? `الأرقام المتاحة تشير إلى: ${second}` : `الأرقام المتاحة تشير إلى: ${first}`;
-  }
-
-  return first;
+  // قص على أقرب فاصلة/نقطة
+  const cut = t.slice(0, 220);
+  const idx = Math.max(cut.lastIndexOf("،"), cut.lastIndexOf("."), cut.lastIndexOf("!"), cut.lastIndexOf("؟"));
+  return (idx > 80 ? cut.slice(0, idx + 1) : cut) + "…";
 }
 
-function buildSummary(lines, intent) {
-  // ملخص: دمج أفضل جملتين مع فلترة
-  const a = lines[0] ? clip(lines[0], 220) : "";
-  const b = lines[1] ? clip(lines[1], 220) : "";
-  const c = lines[2] ? clip(lines[2], 220) : "";
-
-  let summary = [a, b].filter(Boolean).join(" ");
-  if (!summary && c) summary = c;
-
-  summary = clip(cleanText(summary), 360);
-
-  // تحسين بسيط حسب intent
-  if (intent === "where" && summary && !/(تقع|يقع|موقع|located)/i.test(summary)) {
-    summary = `الموقع/المكان: ${summary}`;
-  }
-  if (intent === "define" && summary && !/(تعريف|هو|هي|meaning|definition|is a)/i.test(summary)) {
-    summary = `التعريف: ${summary}`;
-  }
-
-  return summary;
-}
-
-function buildBullets(lines) {
-  const bullets = lines
+function makeBullets(best) {
+  const bullets = best
     .slice(0, 5)
-    .map((l) => clip(cleanText(l), 220))
+    .map((x) => "• " + cleanText(x.sent))
     .filter(Boolean);
 
-  return bullets;
+  return uniqByNormalized(bullets).slice(0, 5);
 }
 
-function buildWarning(intent) {
-  if (intent === "news") {
-    return "تنبيه: الأخبار تتغير بسرعة. تأكد من تاريخ المصدر.";
-  }
-  if (intent === "how_many") {
-    return "تنبيه: الأرقام/الأسعار قد تختلف حسب السنة أو الجهة أو المكان. راجع المصادر للتأكد.";
-  }
-  return "ملاحظة: هذه خلاصة من قصاصات البحث، راجع المصادر للتفاصيل.";
+function qualityNote(best, sources) {
+  const n = Array.isArray(sources) ? sources.length : 0;
+  if (n === 0) return "لم أجد مصادر الآن (قد تكون مفاتيح Google CSE غير مفعلة).";
+  if (!best.length) return "وجدت مصادر لكن النصوص قصيرة/ضعيفة للتلخيص. جرّب صياغة ثانية.";
+  if (best[0].score < 0.08) return "النتائج قد لا تكون دقيقة تمامًا لأن تطابقها مع سؤالك ضعيف.";
+  return "";
 }
 
-function formatAnswer({ direct, summary, bullets, extracted, warning }) {
-  const parts = [];
+function formatByIntent(intent, shortAnswer, bullets) {
+  // قوالب بسيطة حسب intent
+  const it = String(intent || "general").toLowerCase();
 
-  parts.push(`**الجواب المباشر:**\n${direct}`);
-
-  if (summary) parts.push(`\n**الملخص:**\n${summary}`);
-
-  if (bullets && bullets.length) {
-    parts.push(`\n**نقاط مهمة:**\n${bullets.map((b) => `- ${b}`).join("\n")}`);
+  if (it === "definition" || it === "general") {
+    let out = "";
+    if (shortAnswer) out += shortAnswer + "\n\n";
+    if (bullets?.length) out += "أهم النقاط:\n" + bullets.join("\n");
+    return out.trim();
   }
 
-  // أرقام وتواريخ
-  const nums = extracted?.numbers || [];
-  const dates = extracted?.dates || [];
-  if (nums.length || dates.length) {
-    const section = [];
-    if (nums.length) section.push(`- أرقام/قيم واردة: ${nums.join(" ، ")}`);
-    if (dates.length) section.push(`- تواريخ/سنوات واردة: ${dates.join(" ، ")}`);
-    parts.push(`\n**أرقام وتواريخ من النتائج:**\n${section.join("\n")}`);
+  if (it === "howto") {
+    let out = "";
+    if (shortAnswer) out += shortAnswer + "\n\n";
+    if (bullets?.length) out += "خطوات/نقاط عملية:\n" + bullets.join("\n");
+    return out.trim();
   }
 
-  if (warning) parts.push(`\n**ملاحظة:**\n${warning}`);
+  if (it === "compare") {
+    let out = "";
+    if (shortAnswer) out += shortAnswer + "\n\n";
+    if (bullets?.length) out += "مقارنة مختصرة:\n" + bullets.join("\n");
+    return out.trim();
+  }
 
-  return parts.join("\n").trim();
+  // default
+  let out = "";
+  if (shortAnswer) out += shortAnswer + "\n\n";
+  if (bullets?.length) out += "ملخص:\n" + bullets.join("\n");
+  return out.trim();
 }
 
-/**
- * smartSummarize — Level 2
- * @param {Object} params
- * @param {string} params.question
- * @param {string} params.intent
- * @param {Array}  params.sources - [{title, content, link}]
- * @returns {string}
- */
-export function smartSummarize({ question = "", intent = "", sources = [] } = {}) {
-  const q = String(question || "").trim();
-  const inferred = guessIntent(q);
-  const useIntent = String(intent || "").trim() || inferred;
+export function smartSummarize({ question = "", intent = "general", sources = [] } = {}) {
+  const q = cleanText(question);
+  const src = Array.isArray(sources) ? sources : [];
 
-  const arr = Array.isArray(sources) ? sources : [];
-  const normalized = arr
-    .filter(Boolean)
-    .map((s) => ({
-      title: clip(cleanText(s?.title || ""), 200),
-      content: clip(cleanText(s?.content || ""), 420),
-      link: String(s?.link || "").trim(),
-    }))
-    .filter((s) => s.title || s.content || s.link);
+  if (!q) return "السؤال فارغ.";
+  if (!src.length) return "لم أجد نتائج بحث الآن. تأكد من تفعيل مفاتيح Google CSE في Vercel.";
 
-  if (!normalized.length) {
-    return "لم أجد نتائج كافية الآن. جرّب إعادة صياغة السؤال أو المحاولة لاحقاً.";
+  const best = pickBestSentences(q, src);
+  const shortAnswer = inferShortAnswer(q, best);
+  const bullets = makeBullets(best);
+
+  const note = qualityNote(best, src);
+
+  let finalText = formatByIntent(intent, shortAnswer, bullets);
+
+  if (!finalText) {
+    // fallback نهائي
+    finalText = "ملخص سريع:\n" + (bullets.length ? bullets.join("\n") : "لا توجد نقاط كافية.");
   }
 
-  // أفضل مصادر
-  const best = normalized
-    .slice()
-    .sort((a, b) => scoreSource(b) - scoreSource(a))
-    .slice(0, 5);
+  if (note) finalText += `\n\nملاحظة: ${note}`;
 
-  // سطور مرشحة
-  let lines = extractCandidateLines(best);
-
-  // لو ضعيف جدًا: اسمح بسطرين حتى لو قصيرة
-  if (lines.length < 2) {
-    const fallbackLines = dedupeLines(
-      best
-        .flatMap((s) => [s.title, s.content])
-        .map((x) => clip(cleanText(x), 220))
-        .filter(Boolean)
-    ).slice(0, 4);
-    lines = fallbackLines.length ? fallbackLines : lines;
-  }
-
-  // جواب مباشر
-  const direct = pickDirectAnswer(useIntent, q, lines);
-
-  // ملخص
-  const summary = buildSummary(lines, useIntent);
-
-  // نقاط
-  const bullets = buildBullets(lines);
-
-  // استخراج أرقام/تواريخ من نفس السطور
-  const extracted = extractNumbersAndDates(lines);
-
-  // ملاحظة
-  const warning = buildWarning(useIntent);
-
-  return formatAnswer({ direct, summary, bullets, extracted, warning });
+  return finalText.trim();
 }
