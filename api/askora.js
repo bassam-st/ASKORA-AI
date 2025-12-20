@@ -1,6 +1,8 @@
+// api/askora.js
 import { handleAskora } from "../app.js";
 
 export default async function handler(req, res) {
+  // السماح فقط بـ POST
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
@@ -13,37 +15,33 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: "Empty question" });
     }
 
-    const result = await handleAskora(q);
+    const out = await handleAskora(q);
 
-    // ✅ 1) جواب نص دائمًا
-    const answerText =
-      typeof result === "string"
-        ? result
-        : (result?.final || result?.answer || result?.text || result?.answerText || "").toString();
+    // لو رجّع نص فقط
+    if (typeof out === "string") {
+      return res.status(200).json({
+        ok: true,
+        answer: out,
+        sources: [],
+      });
+    }
 
-    // ✅ 2) مصادر: نجبرها تكون Array دائمًا
-    let sources = result?.sources || result?.sourcesList || [];
-    if (!Array.isArray(sources)) sources = [];
+    // لو رجّع Object (المفروض)
+    if (out && typeof out === "object") {
+      // نضمن شكل ثابت
+      return res.status(200).json({
+        ok: true,
+        answer: String(out.answer ?? out.final ?? ""),
+        sources: Array.isArray(out.sources) ? out.sources : [],
+        note: out.note || "",
+        intent: out.intent || "",
+      });
+    }
 
-    // ✅ 3) نحول مصادر objects إلى نصوص بسيطة (حتى ما تخرب الواجهة)
-    const sourcesList = sources.slice(0, 10).map((s) => {
-      if (typeof s === "string") return s;
-      if (s && typeof s === "object") {
-        if (s.title && s.url) return `${s.title} — ${s.url}`;
-        if (s.title) return s.title;
-        if (s.url) return s.url;
-        if (s.content) return String(s.content).slice(0, 140);
-      }
-      return String(s);
-    });
-
-    return res.status(200).json({
-      ok: true,
-      answer: answerText,
-      sources: sourcesList
-    });
-
+    return res.status(200).json({ ok: true, answer: String(out || ""), sources: [] });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || "Server error" });
+    return res
+      .status(500)
+      .json({ ok: false, error: err?.message || "Server error" });
   }
 }
