@@ -1,34 +1,13 @@
 // intent/intent_classifier.js
 // مصنف نية ذكي (بدون نموذج) + درجة ثقة + كلمات مفتاحية
-// تطوير: تطبيع عربي أقوى + نيات إضافية (customs/deploy) + ثقة أدق + debug اختياري
-
-function stripDiacritics(s = "") {
-  // إزالة التشكيل العربي
-  return String(s).replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
-}
-
-function normalizeArabic(s = "") {
-  // توحيد أشكال الحروف العربية لتقليل اختلاف الكتابة
-  return String(s)
-    .replace(/[إأآا]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ـ/g, "");
-}
+// تحسين: Intent جديد "schedule" + Booster للعبارات القصيرة (Query-style)
 
 function norm(s = "") {
-  return normalizeArabic(
-    stripDiacritics(
-      String(s || "")
-        .trim()
-        .toLowerCase()
-        .replace(/\uFFFD/g, "")
-    )
-  )
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\uFFFD/g, "")
+    .replace(/\s+/g, " ");
 }
 
 function stripPunct(s = "") {
@@ -38,21 +17,13 @@ function stripPunct(s = "") {
     .trim();
 }
 
-function tokenize(text = "") {
-  const t = stripPunct(norm(text));
-  if (!t) return [];
-  return t.split(" ").filter(Boolean);
-}
-
 function keywords(question = "") {
-  const parts = tokenize(question);
+  const t = stripPunct(norm(question));
+  if (!t) return [];
+  const parts = t.split(" ").filter(Boolean);
 
   const stop = new Set([
-    // عربي شائع
-    "في","على","من","الى","الي","إلى","عن","ما","ماذا","هل","كم","كيف","لماذا","ليش","اين","أين","وين",
-    "هذا","هذه","هذي","ذلك","تلك","هناك","هنا","انا","انت","انتي","هو","هي","هم","هن",
-    "مع","او","و","ثم","بعد","قبل","اذا","إن","لان","لانه","لكن","يعني","تمام","طيب",
-    // EN شائع
+    "في","على","من","الى","إلى","عن","ما","ماذا","هل","كم","كيف","لماذا","ليش","أين","اين",
     "the","a","an","is","are","of","to","in","on","for","and","or","what","who","where","how","why"
   ]);
 
@@ -60,20 +31,9 @@ function keywords(question = "") {
   for (const w of parts) {
     if (w.length < 2) continue;
     if (stop.has(w)) continue;
-    if (/^\d{1,2}$/.test(w)) continue;
     out.push(w);
   }
-
-  // إزالة التكرار
-  const uniq = [];
-  const seen = new Set();
-  for (const w of out) {
-    if (seen.has(w)) continue;
-    seen.add(w);
-    uniq.push(w);
-  }
-
-  return uniq.slice(0, 12);
+  return out.slice(0, 12);
 }
 
 function scoreMatch(text, rules) {
@@ -84,116 +44,163 @@ function scoreMatch(text, rules) {
   return score;
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+/**
+ * Query-style Booster:
+ * عبارات قصيرة بدون أدوات استفهام، مثل: "مباريات اليوم" "سعر الذهب" "جدول الدوري"
+ * نحاول تحويلها لنية مناسبة بدل general.
+ */
+function applyQueryBooster({ q, ctx, scores }) {
+  const raw = stripPunct(q);
+  const tokens = raw.split(" ").filter(Boolean);
+  const len = tokens.length;
+
+  // أدوات استفهام/سؤال (لو موجودة نخلي القواعد الأساسية تعمل بدون تدخل قوي)
+  const hasQuestionWord =
+    /(^|\s)(كيف|لماذا|ليش|كم|أين|اين|ما|ماذا|من)\b/i.test(q) ||
+    /\b(what|why|how|where|who|which)\b/i.test(q);
+
+  // علامة سؤال
+  const hasQuestionMark = /[?؟]/.test(q);
+
+  // إذا جملة قصيرة + ليست سؤال صريح → Booster
+  const isShortQuery = len >= 1 && len <= 4 && !hasQuestionWord && !hasQuestionMark;
+
+  if (!isShortQuery) return;
+
+  // 1) Schedule / Matches
+  if (
+    /(مباريات|مباراة|جدول|fixtures|schedule|match(es)?|results?|نتائج|ترتيب|standings|points|الدوري|الكأس)\b/i.test(q) ||
+    /(اليوم|الليلة|غدا|غداً|this\s+week|today|tonight|tomorrow)\b/i.test(q)
+  ) {
+    scores.schedule = (scores.schedule || 0) + 45;
+    scores.news = (scores.news || 0) + 8;
+    return;
+  }
+
+  // 2) Prices / how_many
+  if (/(سعر|اسعار|تكلفة|ثمن|price|cost)\b/i.test(q)) {
+    scores.how_many = (scores.how_many || 0) + 35;
+    return;
+  }
+
+  // 3) Definition-like
+  if (len === 1) {
+    // كلمة واحدة غالبًا "تعريف/معلومة عامة"
+    scores.define = (scores.define || 0) + 18;
+  }
+
+  // 4) Tech/how if context dev
+  if (ctx.includes("vercel") || ctx.includes("github") || ctx.includes("deploy")) {
+    scores.how = (scores.how || 0) + 10;
+  }
 }
 
-/**
- * classifyIntent
- * @param {Object} args
- * @param {string} args.text
- * @param {string} args.context
- * @param {Object} opts
- * @param {boolean} opts.debug
- */
-export function classifyIntent({ text = "", context = "" } = {}, opts = {}) {
+export function classifyIntent({ text = "", context = "" } = {}) {
   const qRaw = String(text || "").trim();
   const q = norm(qRaw);
   const ctx = norm(context);
 
   // قواعد (Regex + وزن)
-  // إضافة نيات مهمة لمشروع ASKORA:
-  // - deploy: مشاكل Vercel/GitHub/API/Errors
-  // - customs: بند/HS/تعرفة/اسكودا
   const RULES = {
-    deploy: [
-      { re: /\b(vercel|github|deploy|deployment|build|logs?|runtime|api\/|500|404|cors)\b/i, w: 40 },
-      { re: /\b(نشر|ديبلوي|فيركل|جيتهاب|جيت|اكشنز|build|logs|سجلات|اخطاء|خطا|سيرفر|api)\b/i, w: 40 },
-      { re: /\b(لماذا\s+لا\s+يعمل|ما\s+المشكله|ما\s+هذا\s+الخطا)\b/i, w: 18 },
-    ],
-
-    customs: [
-      { re: /\b(hs|hs\s*code|harmonized|tariff|customs)\b/i, w: 40 },
-      { re: /\b(بند|التعرفة|تعرفه|جمارك|رسوم|اسكودا|اسيكودا|asycuda)\b/i, w: 40 },
-      { re: /\b(رقم\s+البند|كم\s+بند)\b/i, w: 20 },
+    schedule: [
+      { re: /\bمباريات\b/i, w: 35 },
+      { re: /\bمباراة\b/i, w: 25 },
+      { re: /\bجدول\b/i, w: 35 },
+      { re: /\bنتائج\b/i, w: 28 },
+      { re: /\bترتيب\b/i, w: 18 },
+      { re: /\bالدوري\b/i, w: 18 },
+      { re: /\bكأس\b/i, w: 14 },
+      { re: /\bfixtures\b/i, w: 35 },
+      { re: /\bschedule\b/i, w: 35 },
+      { re: /\bmatches?\b/i, w: 30 },
+      { re: /\bresults?\b/i, w: 25 },
+      { re: /\bstandings\b/i, w: 20 },
+      { re: /\btoday\b/i, w: 18 },
+      { re: /\btonight\b/i, w: 15 },
+      { re: /\btomorrow\b/i, w: 12 },
+      { re: /\bاليوم\b/i, w: 15 },
+      { re: /\bالليلة\b/i, w: 12 },
+      { re: /\bغدا\b/i, w: 10 },
+      { re: /\bغداً\b/i, w: 10 },
     ],
 
     who_is: [
-      { re: /^(من\s+هو|من\s+هي|من)\b/i, w: 45 },
-      { re: /\bwho\s+is\b/i, w: 45 },
+      { re: /^(من هو|من هي|من)\b/i, w: 40 },
       { re: /\b(sir|mr|mrs|dr)\b/i, w: 10 },
+      { re: /\bwho\s+is\b/i, w: 40 },
     ],
 
     define: [
-      { re: /^(ما\s+هو|ما\s+هي|ما\s+معنى|اشرح|عرّف|عرف|تعريف)\b/i, w: 42 },
-      { re: /\bwhat\s+is\b/i, w: 42 },
+      { re: /^(ما هو|ما هي|ما معنى|اشرح|عرّف|عرف)\b/i, w: 40 },
+      { re: /\bwhat\s+is\b/i, w: 40 },
       { re: /\bmeaning\b/i, w: 15 },
       { re: /\bdefinition\b/i, w: 15 },
     ],
 
     where: [
-      { re: /^(اين)\b/i, w: 45 },
+      { re: /^(أين|اين)\b/i, w: 45 },
       { re: /\bwhere\b/i, w: 45 },
-      { re: /\bموقع\b/i, w: 18 },
-      { re: /\bيقع\b/i, w: 15 },
+      { re: /\bموقع\b/i, w: 15 },
+      { re: /\bيقع\b/i, w: 12 },
     ],
 
     how: [
-      { re: /^(كيف)\b/i, w: 42 },
-      { re: /\bhow\b/i, w: 42 },
-      { re: /\bطريقة\b/i, w: 18 },
-      { re: /\bخطوات\b/i, w: 18 },
-      { re: /\bsetup\b/i, w: 14 },
-      { re: /\binstall\b/i, w: 14 },
-      { re: /\bconfigure\b/i, w: 14 },
+      { re: /^(كيف)\b/i, w: 40 },
+      { re: /\bhow\b/i, w: 40 },
+      { re: /\bطريقة\b/i, w: 15 },
+      { re: /\bخطوات\b/i, w: 15 },
+      { re: /\bsetup\b/i, w: 12 },
+      { re: /\binstall\b/i, w: 12 },
+      { re: /\bconfigure\b/i, w: 12 },
     ],
 
     why: [
       { re: /^(لماذا|ليش)\b/i, w: 45 },
       { re: /\bwhy\b/i, w: 45 },
-      { re: /\bسبب\b/i, w: 15 },
+      { re: /\bسبب\b/i, w: 12 },
     ],
 
     how_many: [
-      { re: /\bكم\b/i, w: 28 },
+      { re: /\bكم\b/i, w: 35 },
       { re: /\bhow\s+many\b/i, w: 40 },
       { re: /\bhow\s+much\b/i, w: 35 },
-      { re: /\bعدد\b/i, w: 14 },
-      { re: /\bسعر\b/i, w: 18 },
-      { re: /\bتكلفه\b/i, w: 18 },
-      { re: /\bprice\b/i, w: 14 },
-      { re: /\bcost\b/i, w: 14 },
+      { re: /\bعدد\b/i, w: 12 },
+      { re: /\bسعر\b/i, w: 15 },
+      { re: /\bتكلفة\b/i, w: 15 },
+      { re: /\bprice\b/i, w: 12 },
+      { re: /\bcost\b/i, w: 12 },
     ],
 
     compare: [
-      { re: /\bالفرق\b/i, w: 28 },
-      { re: /\bقارن\b/i, w: 28 },
-      { re: /\bافضل\b/i, w: 18 },
-      { re: /\bvs\b/i, w: 22 },
-      { re: /\bcompare\b/i, w: 28 },
-      { re: /\bdifference\b/i, w: 28 },
-      { re: /\bwhich\s+is\s+better\b/i, w: 28 },
+      { re: /\bالفرق\b/i, w: 25 },
+      { re: /\bقارن\b/i, w: 25 },
+      { re: /\bأفضل\b/i, w: 15 },
+      { re: /\bvs\b/i, w: 20 },
+      { re: /\bcompare\b/i, w: 25 },
+      { re: /\bdifference\b/i, w: 25 },
+      { re: /\bwhich\s+is\s+better\b/i, w: 25 },
     ],
 
     translate: [
-      { re: /\bترجم\b/i, w: 40 },
-      { re: /\btranslate\b/i, w: 40 },
-      { re: /\bبالانجليزي\b/i, w: 25 },
-      { re: /\benglish\b/i, w: 15 },
+      { re: /\bترجم\b/i, w: 35 },
+      { re: /\btranslate\b/i, w: 35 },
+      { re: /\bبالانجليزي\b/i, w: 20 },
+      { re: /\bبالإنجليزي\b/i, w: 20 },
+      { re: /\benglish\b/i, w: 12 },
       { re: /\barabic\b/i, w: 12 },
     ],
 
     summarize: [
-      { re: /\bتلخيص\b/i, w: 40 },
-      { re: /\bsummary\b/i, w: 40 },
-      { re: /\bsummarize\b/i, w: 40 },
-      { re: /\bاختصر\b/i, w: 28 },
+      { re: /\bتلخيص\b/i, w: 35 },
+      { re: /\bsummary\b/i, w: 35 },
+      { re: /\bsummarize\b/i, w: 35 },
+      { re: /\bاختصر\b/i, w: 25 },
     ],
 
     news: [
-      { re: /\bاخر\s+الاخبار\b/i, w: 30 },
-      { re: /\bاخبار\b/i, w: 22 },
-      { re: /\bnews\b/i, w: 30 },
+      { re: /\bآخر الأخبار\b/i, w: 25 },
+      { re: /\bاخبار\b/i, w: 20 },
+      { re: /\bnews\b/i, w: 25 },
       { re: /\bbreaking\b/i, w: 18 },
     ],
 
@@ -205,21 +212,17 @@ export function classifyIntent({ text = "", context = "" } = {}, opts = {}) {
     scores[k] = scoreMatch(q, RULES[k]);
   }
 
-  // تعزيز حسب السياق
-  if (ctx.includes("vercel") || ctx.includes("github") || ctx.includes("deploy") || ctx.includes("api")) {
-    scores.deploy += 10;
-    scores.how += 5;
+  // تعزيز حسب السياق (Dev/Customs)
+  if (ctx.includes("vercel") || ctx.includes("github") || ctx.includes("deploy")) {
+    scores.how += 10;
   }
-  if (ctx.includes("بند") || ctx.includes("hs") || ctx.includes("جمارك") || ctx.includes("اسكودا") || ctx.includes("اسيكودا")) {
-    scores.customs += 12;
-    scores.how_many += 6;
-    scores.define += 4;
+  if (ctx.includes("بند") || ctx.includes("hs") || ctx.includes("جمارك")) {
+    scores.how_many += 10;
+    scores.define += 6;
   }
 
-  // تعزيز من الكلمات المفتاحية داخل السؤال نفسه
-  const kws = keywords(qRaw).join(" ");
-  if (/\b(vercel|deploy|github|logs|api|cors|500|404)\b/i.test(kws)) scores.deploy += 8;
-  if (/\b(hs|بند|جمارك|تعرفه|tariff|customs|اسكودا|اسيكودا)\b/i.test(kws)) scores.customs += 8;
+  // ✅ Booster للعبارات القصيرة
+  applyQueryBooster({ q: qRaw, ctx, scores });
 
   // اختيار أعلى نية
   let best = "general";
@@ -231,44 +234,28 @@ export function classifyIntent({ text = "", context = "" } = {}, opts = {}) {
     }
   }
 
-  // حساب الثقة (0..1)
+  // حساب الثقة
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   const top1 = sorted[0] || ["general", 0];
   const top2 = sorted[1] || ["general", 0];
 
   const margin = Math.max(0, top1[1] - top2[1]);
-  const len = tokenize(qRaw).length;
+  let confidence = 0.35;
 
-  let confidence;
-  const s = top1[1];
+  if (top1[1] >= 55) confidence = 0.93;
+  else if (top1[1] >= 45) confidence = 0.88;
+  else if (top1[1] >= 35) confidence = 0.80;
+  else if (top1[1] >= 25) confidence = 0.70;
+  else if (top1[1] >= 15) confidence = 0.60;
+  else confidence = 0.45;
 
-  if (s >= 55) confidence = 0.92;
-  else if (s >= 45) confidence = 0.86;
-  else if (s >= 35) confidence = 0.78;
-  else if (s >= 25) confidence = 0.68;
-  else if (s >= 15) confidence = 0.58;
-  else confidence = 0.46;
+  confidence = Math.min(0.98, confidence + Math.min(0.25, margin / 120));
 
-  // فارق النية عن الثانية يزيد الثقة
-  confidence += clamp(margin / 120, 0, 0.22);
-
-  // سؤال قصير جداً يقلل الثقة
-  if (len <= 1) confidence -= 0.12;
-  else if (len === 2) confidence -= 0.06;
-
-  confidence = clamp(confidence, 0.35, 0.98);
-
-  const result = {
+  return {
     ok: true,
     intent: best,
     confidence,
     keywords: keywords(qRaw),
+    debug: { scores },
   };
-
-  // debug اختياري فقط (حتى لا يبطّئ ولا يوسّخ الناتج)
-  if (opts && opts.debug) {
-    result.debug = { scores, q, ctx, top1, top2, margin, len };
-  }
-
-  return result;
 }
