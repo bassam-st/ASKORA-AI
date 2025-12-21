@@ -1,148 +1,114 @@
-// tools/web_search.js
-// Advanced Web Search Engine (Level Pro)
-// Features:
-// - Intent-aware query rewriting
-// - Source scoring & ranking
-// - Strong domain preference
-// - Noise reduction (social / weak pages)
+// tools/web_search.js — VINFINITY
+// Google Custom Search JSON API (CSE)
+// يرجّع: Array<{title, link, content}>
 
 const BLOCKED_DOMAINS = [
-  "facebook.com","m.facebook.com","x.com","twitter.com",
-  "tiktok.com","instagram.com","pinterest.com",
-  "snapchat.com","threads.net","youtube.com","youtu.be"
+  "facebook.com","m.facebook.com","x.com","twitter.com","tiktok.com","instagram.com",
+  "pinterest.com","snapchat.com","threads.net","youtube.com","youtu.be"
 ];
 
-const PREFERRED_DOMAINS = [
-  "wikipedia.org","britannica.com",
-  "un.org","who.int","unicef.org",
-  "worldbank.org","imf.org","oecd.org",
-  "undp.org","reliefweb.int",
-  "cia.gov","state.gov","gov"
+const BASE_PREFERRED = [
+  "wikipedia.org","britannica.com","un.org","who.int","unicef.org","worldbank.org","imf.org","oecd.org","undp.org","reliefweb.int",
+  "reuters.com","apnews.com","bbc.com"
 ];
 
-// ---------- Helpers ----------
-function getDomain(url = "") {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return "";
-  }
+const INTENT_PREFERRED = {
+  schedule: ["yallakora.com","koora.com","filgoal.com","365scores.com","sofascore.com"],
+  news: ["reuters.com","apnews.com","bbc.com","aljazeera.net","arabnews.com"]
+};
+
+function getDomain(url=""){
+  try{
+    const u = new URL(url);
+    return (u.hostname||"").replace(/^www\./,"").toLowerCase();
+  }catch{ return ""; }
 }
 
-function isBlocked(url = "") {
+function isBlocked(url=""){
   const d = getDomain(url);
-  return BLOCKED_DOMAINS.some(b => d === b || d.endsWith("." + b));
+  if(!d) return false;
+  return BLOCKED_DOMAINS.some(x => d === x || d.endsWith("." + x));
 }
 
-function domainScore(url = "") {
+function scorePreferred(url="", intent="general"){
   const d = getDomain(url);
-  if (!d) return 0;
-  return PREFERRED_DOMAINS.some(p => d === p || d.endsWith("." + p)) ? 10 : 0;
-}
+  if(!d) return 0;
 
-function cleanText(s = "") {
-  return String(s || "").replace(/\s+/g, " ").trim();
-}
+  let score = 0;
 
-function normalizeItem(item) {
-  return {
-    title: cleanText(item?.title),
-    link: cleanText(item?.link),
-    content: cleanText(item?.snippet || item?.htmlSnippet || "")
-  };
-}
-
-// ---------- Query Rewriting ----------
-function rewriteQueries(query, intent) {
-  const q = query.trim();
-  const list = [q];
-
-  if (intent?.main_intent === "geography") {
-    list.push(`${q} الموقع`);
-    list.push(`أين تقع ${q}`);
+  const ip = INTENT_PREFERRED[intent] || [];
+  for (let i=0;i<ip.length;i++){
+    const x = ip[i];
+    if (d === x || d.endsWith("." + x)) score += (14 - i);
   }
 
-  if (intent?.main_intent === "person") {
-    list.push(`${q} السيرة الذاتية`);
-    list.push(`من هو ${q}`);
+  for (const x of BASE_PREFERRED){
+    if (d === x || d.endsWith("." + x)) score += 6;
   }
 
-  if (intent?.main_intent === "economy") {
-    list.push(`${q} إحصائيات`);
-    list.push(`${q} الاقتصاد`);
-  }
-
-  if (intent?.question_type === "definition") {
-    list.push(`تعريف ${q}`);
-    list.push(`${q} meaning`);
-  }
-
-  // إزالة التكرار
-  return [...new Set(list)].slice(0, 3);
+  return score;
 }
 
-// ---------- Fetch ----------
-async function fetchWithTimeout(url, timeoutMs = 12000) {
+function normalizeItem(item){
+  const title = String(item?.title || "").trim();
+  const link = String(item?.link || "").trim();
+  const content = String(item?.snippet || item?.htmlSnippet || "").trim();
+  return { title, link, content };
+}
+
+async function fetchWithTimeout(url, timeoutMs=12000){
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
+  const t = setTimeout(()=>controller.abort(), timeoutMs);
+  try{ return await fetch(url, { signal: controller.signal }); }
+  finally{ clearTimeout(t); }
 }
 
-// ---------- Main ----------
-export async function webSearch(query, { num = 5, intent = {} } = {}) {
-  const key = process.env.GOOGLE_CSE_KEY;
-  const cx  = process.env.GOOGLE_CSE_CX;
+export async function webSearch(query, { num=6, intent="general" } = {}){
+  const q = String(query||"").trim();
+  if(!q) return [];
 
-  if (!key || !cx || !query) return [];
+  const key = String(process?.env?.GOOGLE_CSE_KEY || "").trim();
+  const cx  = String(process?.env?.GOOGLE_CSE_CX || "").trim();
+  if(!key || !cx) return [];
 
-  const queries = rewriteQueries(query, intent);
-  let allResults = [];
+  const n = Math.max(1, Math.min(10, Number(num || 6)));
 
-  for (const q of queries) {
-    const url =
-      "https://www.googleapis.com/customsearch/v1" +
-      `?key=${encodeURIComponent(key)}` +
-      `&cx=${encodeURIComponent(cx)}` +
-      `&q=${encodeURIComponent(q)}` +
-      `&num=${Math.min(num, 10)}` +
-      `&hl=ar&safe=active`;
+  const url =
+    "https://www.googleapis.com/customsearch/v1" +
+    `?key=${encodeURIComponent(key)}` +
+    `&cx=${encodeURIComponent(cx)}` +
+    `&q=${encodeURIComponent(q)}` +
+    `&num=${n}` +
+    `&hl=ar` +
+    `&gl=ye` +
+    `&safe=active`;
 
-    try {
-      const res = await fetchWithTimeout(url);
-      if (!res.ok) continue;
+  const res = await fetchWithTimeout(url, 12000);
+  if(!res.ok) return [];
 
-      const data = await res.json();
-      const items = Array.isArray(data?.items) ? data.items : [];
+  const data = await res.json().catch(()=>null);
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if(!items.length) return [];
 
-      allResults.push(
-        ...items
-          .map(normalizeItem)
-          .filter(x => x.link && !isBlocked(x.link))
-          .map(x => ({
-            ...x,
-            score: domainScore(x.link) + (x.content.length > 120 ? 2 : 0)
-          }))
-      );
-    } catch {
-      continue;
-    }
-  }
+  let out = items.map(normalizeItem).filter(x => x.link && !isBlocked(x.link));
 
-  // دمج + ترتيب + إزالة تكرار
+  out = out
+    .map(x => ({ ...x, _p: scorePreferred(x.link, intent) }))
+    .sort((a,b)=>(b._p||0)-(a._p||0))
+    .map(({_p, ...rest})=>rest);
+
+  out = out.map(x => ({
+    title: x.title,
+    link: x.link,
+    content: String(x.content||"").replace(/\s+/g," ").trim().slice(0, 360),
+  }));
+
   const seen = new Set();
-  const ranked = allResults
-    .sort((a, b) => (b.score || 0) - (a.score || 0))
-    .filter(x => {
-      if (seen.has(x.link)) return false;
-      seen.add(x.link);
-      return true;
-    })
-    .slice(0, num)
-    .map(({ score, ...rest }) => rest);
+  out = out.filter(x => {
+    if(seen.has(x.link)) return false;
+    seen.add(x.link);
+    return true;
+  });
 
-  return ranked;
+  return out.slice(0, n);
 }
