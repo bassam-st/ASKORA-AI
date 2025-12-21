@@ -1,157 +1,147 @@
 // answer/smart_summarizer.js
-// Smart Summarizer - Level 3 (ChatGPT-like, no LLM)
-// Priority: Intelligence > Speed > Accuracy
-// Builds a natural, friendly answer from web sources
+// Smart Summarizer v2 (بدون نموذج)
+// - يقرأ snippets من المصادر ويطلع خلاصة "مفيدة" حسب النية
+// - خاص: schedule -> رد "بيانات/روابط" وليس شرح عام
 
-// ---------------- Utilities ----------------
-function cleanText(s = "") {
+function clean(s = "") {
   return String(s || "")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\uFFFD/g, "")
     .replace(/\s+/g, " ")
+    .replace(/\uFFFD/g, "")
     .trim();
 }
 
-function detectArabic(s = "") {
-  return /[ء-ي]/.test(s);
+function clip(s = "", max = 420) {
+  const t = clean(s);
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1) + "…";
 }
 
-function splitSentences(text = "") {
-  const t = cleanText(text);
+function getHost(url = "") {
+  try {
+    const u = new URL(url);
+    return (u.hostname || "").replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function pickTopSources(sources = [], n = 4) {
+  const arr = Array.isArray(sources) ? sources : [];
+  const out = [];
+  const seen = new Set();
+
+  for (const s of arr) {
+    if (!s) continue;
+    const link = clean(s.link);
+    if (link && seen.has(link)) continue;
+    if (link) seen.add(link);
+    out.push({
+      title: clean(s.title),
+      link,
+      content: clip(s.content, 360),
+      host: getHost(link),
+    });
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+function makeSourcesBlock(picked = []) {
+  if (!picked.length) return "• لا توجد مصادر كافية حالياً.";
+  return picked
+    .map((s, i) => {
+      const name = s.host || s.title || `مصدر ${i + 1}`;
+      return `• ${name}${s.link ? `: ${s.link}` : ""}`;
+    })
+    .join("\n");
+}
+
+// محاولة استخراج "معلومة رقمية" بسيطة من snippets (تواريخ/أرقام/توقيت…)
+function extractSignals(text = "") {
+  const t = clean(text);
   if (!t) return [];
-  return t
-    .split(/(?<=[\.\!\?\u061F\u06D4])\s+|[\n•\-]+/g)
-    .map(x => cleanText(x))
-    .filter(x => x.length >= 25);
+
+  const hits = [];
+
+  // أوقات/نتائج محتملة
+  const timeLike = t.match(/\b(\d{1,2}:\d{2})\b/g);
+  if (timeLike?.length) hits.push(...timeLike.slice(0, 4));
+
+  // تواريخ
+  const dateLike = t.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g);
+  if (dateLike?.length) hits.push(...dateLike.slice(0, 3));
+
+  // أرقام
+  const nums = t.match(/\b\d{2,}\b/g);
+  if (nums?.length) hits.push(...nums.slice(0, 3));
+
+  // تنظيف تكرار
+  return Array.from(new Set(hits)).slice(0, 6);
 }
 
-function tokenize(s = "") {
-  const t = cleanText(s).toLowerCase();
-  const raw = t.split(/[^a-z0-9\u0600-\u06FF]+/g).filter(Boolean);
-
-  const stop = new Set([
-    "في","من","على","الى","إلى","عن","هو","هي","هذا","هذه","ذلك","تلك","ما","ماذا","كيف","كم","أين","اين",
-    "the","a","an","is","are","of","to","in","on","for","and","or","with","by","as"
-  ]);
-
-  return raw.filter(w => w.length >= 2 && !stop.has(w));
+function joinSnippetsForScan(sources = []) {
+  return (Array.isArray(sources) ? sources : [])
+    .slice(0, 6)
+    .map((s) => clean(s?.content))
+    .filter(Boolean)
+    .join(" | ");
 }
 
-function jaccard(a, b) {
-  const A = new Set(a);
-  const B = new Set(b);
-  if (!A.size || !B.size) return 0;
-  let inter = 0;
-  for (const x of A) if (B.has(x)) inter++;
-  const union = A.size + B.size - inter;
-  return union ? inter / union : 0;
+function isScheduleIntent(intent = "") {
+  return String(intent || "").trim().toLowerCase() === "schedule";
 }
 
-// ---------------- Core Logic ----------------
-function extractCandidates(question, sources) {
-  const qTok = tokenize(question);
-  const pool = [];
+export function smartSummarize({ question = "", intent = "general", sources = [] } = {}) {
+  const q = clean(question);
+  const it = String(intent || "general").trim().toLowerCase();
+  const picked = pickTopSources(sources, 5);
+  const scanText = joinSnippetsForScan(sources);
+  const signals = extractSignals(scanText);
 
-  for (const s of sources) {
-    const title = cleanText(s?.title || "");
-    const content = cleanText(s?.content || "");
+  // ✅ C) رد خاص للـ schedule
+  if (isScheduleIntent(it)) {
+    const found = picked.map((s) => s.content).filter(Boolean);
+    const hasAnyUseful = found.join(" ").length > 40;
 
-    const sentences = splitSentences(`${title}. ${content}`);
-    for (const sent of sentences) {
-      const score =
-        jaccard(tokenize(sent), qTok) +
-        (title ? 0.05 : 0) +
-        (sent.length > 80 ? 0.05 : 0);
-
-      pool.push({ sent, score });
-    }
+    return [
+      `إليك نتيجة سريعة عن: **${q || "مباريات اليوم"}**`,
+      "",
+      "🔎 ماذا وجدنا من البحث:",
+      hasAnyUseful
+        ? `• نقاط/معلومات من المصادر: ${clip(found.join(" — "), 520)}`
+        : "• المصادر لم تُظهر جدولًا كاملًا داخل المقتطفات، لكنها تُعطي صفحات الجدول مباشرة (روابط تحت).",
+      signals.length ? `• إشارات (قد تتضمن وقت/تاريخ/أرقام): ${signals.join(" ، ")}` : "",
+      "",
+      "✅ أفضل روابط لجدول اليوم/النتائج (افتحها مباشرة):",
+      makeSourcesBlock(picked),
+      "",
+      "❓ حتى أعطيك جدول أدق: اكتب اسم **الدوري/البلد** (مثال: الدوري السعودي، الدوري الإسباني، دوري الأبطال).",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
-  pool.sort((a, b) => b.score - a.score);
+  // باقي النوايا (عام محسّن)
+  const bestSnippet = picked.find((s) => s.content)?.content || "";
+  const sourcesBlock = makeSourcesBlock(picked);
 
-  // إزالة الجمل المتشابهة
-  const picked = [];
-  for (const item of pool) {
-    if (picked.length >= 10) break;
-    const similar = picked.some(p => jaccard(tokenize(p.sent), tokenize(item.sent)) > 0.82);
-    if (!similar) picked.push(item);
-  }
+  const header = q ? `إليك خلاصة واضحة عن سؤالك: **${q}**` : "إليك خلاصة واضحة:";
+  const body = bestSnippet
+    ? `• الخلاصة من أعلى مصدر: ${clip(bestSnippet, 520)}`
+    : "• لم أجد مقتطفات كافية داخل نتائج البحث، جرّب صياغة أوضح أو أضف تفاصيل.";
 
-  return picked;
-}
+  const extra = signals.length ? `• إشارات/أرقام مهمة ظهرت: ${signals.join(" ، ")}` : "";
 
-function buildIntro(question, intent, best) {
-  if (!best.length) return "";
-
-  const first = best[0].sent;
-  const isAr = detectArabic(question);
-
-  // صياغة ودودة
-  if (intent?.main_intent === "geography") {
-    return isAr
-      ? `باختصار، ${first}`
-      : `In short, ${first}`;
-  }
-
-  if (intent?.main_intent === "person") {
-    return isAr
-      ? `بشكل عام، ${first}`
-      : `Generally, ${first}`;
-  }
-
-  return isAr
-    ? `إليك خلاصة واضحة عن سؤالك: ${first}`
-    : `Here is a clear summary of your question: ${first}`;
-}
-
-function buildBullets(best) {
-  return best
-    .slice(1, 6)
-    .map(x => "• " + cleanText(x.sent))
-    .filter(Boolean);
-}
-
-function qualityNote(best, sources) {
-  if (!sources.length) {
-    return "لم أتمكن من العثور على مصادر الآن (قد تكون مفاتيح البحث غير مفعلة).";
-  }
-  if (!best.length) {
-    return "وجدت مصادر، لكن المعلومات المتاحة كانت محدودة. يمكنك إعادة صياغة السؤال.";
-  }
-  if (best[0].score < 0.08) {
-    return "المعلومات المتاحة قد لا تكون دقيقة تمامًا لأن تطابقها مع سؤالك ضعيف.";
-  }
-  return "";
-}
-
-// ---------------- Public API ----------------
-export function smartSummarize({ question = "", intent = {}, sources = [] } = {}) {
-  const q = cleanText(question);
-  const src = Array.isArray(sources) ? sources : [];
-
-  if (!q) return "السؤال فارغ.";
-  if (!src.length) return "لم أجد نتائج كافية للإجابة الآن.";
-
-  const best = extractCandidates(q, src);
-
-  const intro = buildIntro(q, intent, best);
-  const bullets = buildBullets(best);
-  const note = qualityNote(best, src);
-
-  let answer = "";
-
-  if (intro) {
-    answer += intro;
-  }
-
-  if (bullets.length) {
-    answer += "\n\n" + (detectArabic(q) ? "أهم النقاط:" : "Key points:");
-    answer += "\n" + bullets.join("\n");
-  }
-
-  if (note) {
-    answer += "\n\nملاحظة: " + note;
-  }
-
-  return answer.trim();
+  return [
+    header,
+    "",
+    "أهم النقاط:",
+    body,
+    extra,
+    "",
+    "المصادر:",
+    sourcesBlock,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
