@@ -1,15 +1,10 @@
 {
   "name": "askora-ai",
-  "version": "0.1.0",
-  "description": "ASKORA – Smart AI Assistant with Web Search",
-  "main": "app.js",
+  "version": "8.0.0",
+  "private": true,
   "type": "module",
+  "description": "ASKORA AI — VINFINITY (web search + smart synthesis + optional LLM)",
   "scripts": {
-    "start": "node app.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "author": "Bassam Alshtimy",
-  "license": "MIT"
+    "dev": "node app.js"
+  }
 }

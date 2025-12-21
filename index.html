@@ -2,330 +2,328 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ASKORA AI (Test)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASKORA AI — VINFINITY</title>
+  <meta name="theme-color" content="#0b1020" />
   <style>
+    *{box-sizing:border-box}
     :root{
-      --bg:#0b0b12; --card:#12122a; --card2:#0f1020;
-      --txt:#e7e7f0; --muted:#a9a9c2;
-      --border:rgba(255,255,255,.08);
-      --purple:#7c3aed; --purple2:#6d28d9;
-      --btn:#1b1c35;
+      --bg:#0b1020;
+      --card:rgba(255,255,255,.06);
+      --line:rgba(255,255,255,.10);
+      --txt:#e5e7eb;
+      --mut:#b7c0d1;
+      --accent:#7c3aed;
+      --good:#22c55e;
+      --bad:#ef4444;
+      --soft:#111827;
+      --white:#fff;
       --radius:16px;
     }
-    *{box-sizing:border-box}
     body{
-      margin:0; font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;
-      background: radial-gradient(1200px 600px at 50% 0%, rgba(124,58,237,.22), transparent 60%), var(--bg);
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Tahoma, Arial;
+      background:var(--bg);
       color:var(--txt);
       min-height:100vh;
-      display:flex; justify-content:center; align-items:flex-start;
-      padding:28px 14px;
-    }
-    .wrap{width:min(720px, 100%);}
-    h1{margin:8px 0 18px; text-align:center; letter-spacing:.5px; font-size:28px;}
-    .panel{
-      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-      border:1px solid var(--border);
-      border-radius:22px;
       padding:18px;
-      box-shadow:0 12px 40px rgba(0,0,0,.45);
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
     }
-    textarea{
-      width:100%; min-height:110px; resize:vertical;
-      border-radius:18px; border:1px solid var(--border);
-      background:#fff; color:#111; padding:14px; font-size:18px;
-      outline:none;
+    .wrap{width:min(1180px,100%)}
+    .top{
+      display:flex;
+      gap:14px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+      margin:8px 0 14px;
     }
-    .row{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center;}
-    .btn{
-      border:1px solid var(--border);
-      background:var(--btn); color:var(--txt);
-      padding:12px 16px; border-radius:14px;
-      font-size:16px; cursor:pointer;
+    .brand{
+      display:flex; gap:10px; align-items:center;
+      font-weight:900; letter-spacing:.4px;
+      font-size:26px;
     }
-    .btn.primary{
-      background:linear-gradient(180deg, var(--purple), var(--purple2));
-      border-color:rgba(124,58,237,.55);
-      min-width:120px;
+    .badge{
+      font-size:12px; padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.05);
+      color:var(--mut);
     }
-    .btn:disabled{opacity:.6; cursor:not-allowed}
-    .pill{
-      margin-inline-start:auto;
-      display:flex; align-items:center; gap:8px;
-      padding:10px 12px; border-radius:999px;
-      border:1px solid var(--border); background:rgba(255,255,255,.03);
-      color:var(--muted); font-size:14px;
-    }
-    .dot{width:10px;height:10px;border-radius:50%; background:#22c55e}
-    .meta{
-      margin-top:12px;
-      color:var(--muted); font-size:14px;
-      border:1px solid var(--border); background:rgba(255,255,255,.03);
-      padding:10px 12px; border-radius:999px;
-    }
-
     .card{
-      margin-top:14px;
-      background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
-      border:1px solid var(--border);
-      border-radius:20px;
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:0 14px 34px rgba(0,0,0,.35);
       padding:14px;
     }
-    .card h3{margin:0 0 10px; font-size:18px; color:#ddd;}
-    .answer{
-      white-space:pre-wrap;
-      line-height:1.85;
-      font-size:16px;
-      color:#f0f0ff;
+    .grid{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:12px;
     }
-    .actions{
-      display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;
+    @media(max-width: 980px){
+      .grid{ grid-template-columns:1fr; }
     }
-    .actions a{
-      text-decoration:none;
-    }
-    .actionBtn{
-      display:inline-flex; align-items:center; justify-content:center;
-      padding:12px 14px;
+    textarea{
+      width:100%;
+      min-height:120px;
       border-radius:14px;
-      border:1px solid var(--border);
-      background:rgba(255,255,255,.04);
-      color:var(--txt);
-      min-width:160px;
+      border:1px solid rgba(255,255,255,.12);
+      background:#fff;
+      color:#111827;
+      font-size:20px;
+      padding:14px 14px;
+      outline:none;
+      resize:vertical;
     }
-    .actionBtn.primary{
-      background:linear-gradient(180deg, rgba(124,58,237,.9), rgba(109,40,217,.9));
-      border-color:rgba(124,58,237,.55);
-    }
-
-    .src{
-      margin-top:10px;
-      border-top:1px dashed rgba(255,255,255,.12);
-      padding-top:10px;
-      color:var(--muted);
-      font-size:14px;
-    }
-    .src a{color:#9aa7ff}
-    label.chk{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:14px;}
-    input[type="checkbox"]{transform:scale(1.15)}
-    .err{
-      margin-top:12px;
-      background:rgba(220,38,38,.16);
-      border:1px solid rgba(220,38,38,.35);
+    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+    button{
+      border:0; border-radius:12px;
       padding:12px 14px;
-      border-radius:16px;
-      color:#ffd1d1;
+      font-size:16px;
+      cursor:pointer;
+      background:rgba(255,255,255,.10);
+      color:var(--white);
+    }
+    button.primary{ background:var(--accent); }
+    button:disabled{ opacity:.6; cursor:not-allowed; }
+    .pill{
+      display:inline-flex; gap:8px; align-items:center;
+      padding:7px 11px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.05);
+      font-size:13px;
+      color:var(--mut);
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background:var(--good); }
+    .dot.bad{ background:var(--bad); }
+    .mini{ font-size:12px; color:var(--mut); opacity:.95; }
+    .box{
+      background:rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;
+      padding:12px;
+      line-height:1.85;
       white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }
+    .title2{ font-size:14px; font-weight:800; margin:0 0 8px; color:var(--mut); }
+    .sources{
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .src{
+      padding:10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(0,0,0,.25);
+      overflow:hidden;
+    }
+    .src .t{ font-weight:800; margin-bottom:6px; }
+    .src .l a{ color:#93c5fd; text-decoration:none; }
+    .src .l a:hover{ text-decoration:underline; }
+    .src .c{ color:var(--mut); font-size:13px; margin-top:6px; }
+    .note{
+      margin-top:10px;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px dashed rgba(255,255,255,.16);
+      color:var(--mut);
+      background:rgba(255,255,255,.04);
+      font-size:13px;
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>ASKORA AI (Test)</h1>
+    <div class="top">
+      <div class="brand">
+        <span>ASKORA</span>
+        <span class="badge">VINFINITY</span>
+      </div>
+      <div class="mini">اكتب سؤال… حتى لو ناقص أو فيه أخطاء، ASKORA يحاول يفهم ويعطيك ملخص + مصادر.</div>
+    </div>
 
-    <div class="panel">
-      <textarea id="q" placeholder="اكتب سؤالك هنا..."></textarea>
+    <div class="card">
+      <textarea id="q" placeholder="مثال: مباريات اليوم\nمثال: كم سعر الحديد عالميًا\nمثال: من هو فينيسيوس؟"></textarea>
 
       <div class="row">
-        <button class="btn primary" id="send">إرسال!</button>
-        <button class="btn" id="copy">نسخ الملخص</button>
-        <button class="btn" id="clear">مسح</button>
+        <button id="send" class="primary">إرسال</button>
+        <button id="openBest">فتح أفضل مصدر</button>
+        <button id="copySum">نسخ الملخص</button>
+        <button id="clear">مسح</button>
 
-        <label class="chk">
-          <input type="checkbox" id="autoOpen" checked />
-          فتح تلقائي لروابط المباريات
-        </label>
+        <span class="pill">
+          <span id="dot" class="dot"></span>
+          <span id="stxt">جاهز</span>
+        </span>
 
-        <div class="pill"><span class="dot" id="dot"></span><span id="st">جاهز</span></div>
+        <span class="pill">Intent: <span id="intent">—</span></span>
+        <span class="pill">Confidence: <span id="conf">—</span></span>
       </div>
 
-      <div class="meta" id="note">—</div>
+      <div id="note" class="note">💡 تلميح: اضغط Ctrl+Enter للإرسال سريعًا.</div>
 
-      <div id="out"></div>
-      <div id="err" class="err" style="display:none;"></div>
+      <div class="grid" style="margin-top:12px">
+        <div>
+          <div class="title2">الملخص الذكي</div>
+          <div id="summary" class="box">اكتب سؤال واضغط إرسال.</div>
+        </div>
+
+        <div>
+          <div class="title2">المصادر</div>
+          <div id="sources" class="sources"></div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <script type="module">
-    const $ = (id)=>document.getElementById(id);
+<script type="module">
+  const $ = (id)=>document.getElementById(id);
 
-    const q = $("q");
-    const send = $("send");
-    const copy = $("copy");
-    const clear = $("clear");
-    const out = $("out");
-    const err = $("err");
-    const st = $("st");
-    const dot = $("dot");
-    const note = $("note");
-    const autoOpen = $("autoOpen");
+  const q = $("q");
+  const send = $("send");
+  const openBest = $("openBest");
+  const copySum = $("copySum");
+  const clear = $("clear");
 
-    let lastAnswerText = "";
+  const dot = $("dot");
+  const stxt = $("stxt");
+  const summary = $("summary");
+  const sources = $("sources");
+  const note = $("note");
+  const intent = $("intent");
+  const conf = $("conf");
 
-    function setStatus(ok, text){
-      st.textContent = text || (ok ? "تم" : "خطأ");
-      dot.style.background = ok ? "#22c55e" : "#ef4444";
+  let lastBestUrl = "";
+
+  function setStatus(ok, txt){
+    dot.className = "dot" + (ok ? "" : " bad");
+    stxt.textContent = txt || (ok ? "تم" : "فشل");
+  }
+
+  function escapeHtml(s=""){
+    return String(s).replace(/[&<>"']/g, (m)=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[m]));
+  }
+
+  function renderSources(arr){
+    sources.innerHTML = "";
+    const list = Array.isArray(arr) ? arr : [];
+    lastBestUrl = "";
+
+    if(!list.length){
+      sources.innerHTML = `<div class="box" style="opacity:.9">لا توجد مصادر. تأكد من إعداد مفاتيح GOOGLE_CSE_KEY و GOOGLE_CSE_CX.</div>`;
+      return;
     }
 
-    function renderResponse(data){
-      out.innerHTML = "";
-      err.style.display = "none";
+    lastBestUrl = (list[0]?.link || "").trim();
 
-      const intent = data?.intent || "general";
-      const actions = Array.isArray(data?.actions) ? data.actions : [];
-      const sources = Array.isArray(data?.sources) ? data.sources : [];
-      const answer = String(data?.answer || "").trim();
-      lastAnswerText = answer;
+    for(const s of list){
+      const t = (s?.title || "مصدر").toString().trim() || "مصدر";
+      const l = (s?.link || "").toString().trim();
+      const c = (s?.content || "").toString().trim();
 
-      // Card: Answer + Actions
-      const card = document.createElement("div");
-      card.className = "card";
-      card.innerHTML = `
-        <h3>الملخص <span style="color:#9ca3af;font-size:13px;">intent: ${intent}</span></h3>
-        <div class="answer">${escapeHtml(answer)}</div>
+      const div = document.createElement("div");
+      div.className = "src";
+      div.innerHTML = `
+        <div class="t">${escapeHtml(t)}</div>
+        ${l ? `<div class="l"><a href="${l}" target="_blank" rel="noopener">${escapeHtml(l)}</a></div>` : ""}
+        ${c ? `<div class="c">${escapeHtml(c)}</div>` : ""}
       `;
+      sources.appendChild(div);
+    }
+  }
 
-      if (actions.length){
-        const aWrap = document.createElement("div");
-        aWrap.className = "actions";
+  async function safeJson(res){
+    const text = await res.text();
+    try{ return JSON.parse(text); }
+    catch{
+      return { ok:false, error:"NOT_JSON", message:text.slice(0, 1200) };
+    }
+  }
 
-        actions.forEach((a)=>{
-          const url = String(a?.url || "").trim();
-          const label = String(a?.label || "فتح").trim();
-          if (!url) return;
-
-          const link = document.createElement("a");
-          link.href = url;
-          link.target = "_blank";
-          link.rel = "noopener";
-
-          const btn = document.createElement("div");
-          btn.className = "actionBtn" + (a?.primary ? " primary" : "");
-          btn.textContent = label;
-
-          link.appendChild(btn);
-          aWrap.appendChild(link);
-        });
-
-        card.appendChild(aWrap);
-      }
-
-      if (sources.length){
-        const s = document.createElement("div");
-        s.className = "src";
-        s.innerHTML = `<div style="margin-bottom:6px;color:#d1d5db;">المصادر (${sources.length})</div>`;
-        sources.slice(0,6).forEach((x)=>{
-          const t = escapeHtml(String(x?.title || "مصدر").trim() || "مصدر");
-          const u = String(x?.link || "").trim();
-          if (u){
-            const p = document.createElement("div");
-            p.innerHTML = `• <a href="${u}" target="_blank" rel="noopener">${t}</a>`;
-            s.appendChild(p);
-          }
-        });
-        card.appendChild(s);
-      }
-
-      out.appendChild(card);
+  async function ask(){
+    const question = q.value.trim();
+    if(!question){
+      summary.textContent = "اكتب سؤال أولاً.";
+      return;
     }
 
-    function escapeHtml(str){
-      return String(str || "")
-        .replaceAll("&","&amp;")
-        .replaceAll("<","&lt;")
-        .replaceAll(">","&gt;");
+    send.disabled = true;
+    setStatus(true, "جاري…");
+    note.textContent = "⏳ جاري التفكير…";
+
+    try{
+      const res = await fetch("/api/askora", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ question })
+      });
+
+      const data = await safeJson(res);
+
+      if(!data?.ok){
+        setStatus(false, "فشل");
+        summary.textContent = (data?.message || data?.error || "خطأ غير معروف").toString();
+        renderSources([]);
+        intent.textContent = "—";
+        conf.textContent = "—";
+        note.textContent = "⚠️ حصل خطأ في السيرفر.";
+        return;
+      }
+
+      setStatus(true, "تم");
+      summary.textContent = String(data.answer || "");
+      renderSources(data.sources || []);
+      intent.textContent = String(data.intent || "general");
+      conf.textContent = String(data.confidence || "—");
+      note.textContent = String(data.note || "");
+
+    }catch(e){
+      setStatus(false, "فشل");
+      summary.textContent = String(e?.message || e || "خطأ");
+      renderSources([]);
+      intent.textContent = "—";
+      conf.textContent = "—";
+      note.textContent = "⚠️ تعذر الاتصال بالسيرفر.";
+    }finally{
+      send.disabled = false;
     }
+  }
 
-    async function ask(){
-      const text = q.value.trim();
-      if (!text) return;
+  send.addEventListener("click", ask);
+  q.addEventListener("keydown", (e)=>{
+    if(e.key==="Enter" && (e.ctrlKey || e.metaKey)) ask();
+  });
 
-      setStatus(true, "جارٍ...");
-      note.textContent = "—";
-      err.style.display = "none";
-      out.innerHTML = "";
+  clear.addEventListener("click", ()=>{
+    q.value = "";
+    summary.textContent = "اكتب سؤال واضغط إرسال.";
+    renderSources([]);
+    setStatus(true, "جاهز");
+    intent.textContent = "—";
+    conf.textContent = "—";
+    note.textContent = "💡 تلميح: اضغط Ctrl+Enter للإرسال سريعًا.";
+  });
 
-      // ✅ Trick لفتح تبويب بدون ما يمنعه المتصفح (بما أنه من click)
-      let pendingWin = null;
-      if (autoOpen.checked) {
-        pendingWin = window.open("", "_blank");
-      }
-
-      send.disabled = true;
-
-      try{
-        const res = await fetch("/api/askora", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ question: text })
-        });
-
-        // لو صار رد غير JSON
-        const raw = await res.text();
-        let data = null;
-        try { data = JSON.parse(raw); }
-        catch(e){
-          throw new Error("الرد ليس JSON:\n" + raw.slice(0, 200));
-        }
-
-        note.textContent = String(data?.note || "—");
-
-        if (!data?.ok){
-          setStatus(false, "خطأ");
-          err.style.display = "block";
-          err.textContent = (data?.message || data?.error || "Server error");
-          if (pendingWin) pendingWin.close();
-          return;
-        }
-
-        setStatus(true, "تم");
-        renderResponse(data);
-
-        // ✅ فتح تلقائي: لو فيه Action primary + autofire
-        const actions = Array.isArray(data?.actions) ? data.actions : [];
-        const fire = actions.find(a => a?.primary && a?.autofire && a?.url);
-
-        if (pendingWin) {
-          if (fire?.url) pendingWin.location = fire.url;
-          else pendingWin.close();
-        }
-
-      }catch(e){
-        setStatus(false, "خطأ");
-        err.style.display = "block";
-        err.textContent = String(e?.message || e || "error");
-        if (pendingWin) pendingWin.close();
-      }finally{
-        send.disabled = false;
-      }
+  copySum.addEventListener("click", async ()=>{
+    try{
+      await navigator.clipboard.writeText(summary.textContent || "");
+      note.textContent = "✅ تم نسخ الملخص.";
+    }catch{
+      note.textContent = "⚠️ المتصفح منع النسخ.";
     }
+  });
 
-    send.addEventListener("click", ask);
-    q.addEventListener("keydown", (e)=>{
-      if (e.key === "Enter" && !e.shiftKey){
-        e.preventDefault();
-        ask();
-      }
-    });
-
-    copy.addEventListener("click", async ()=>{
-      if (!lastAnswerText) return;
-      try{
-        await navigator.clipboard.writeText(lastAnswerText);
-        note.textContent = "✅ تم نسخ الملخص";
-      }catch{
-        note.textContent = "تعذر النسخ";
-      }
-    });
-
-    clear.addEventListener("click", ()=>{
-      q.value = "";
-      out.innerHTML = "";
-      err.style.display = "none";
-      note.textContent = "—";
-      setStatus(true, "جاهز");
-    });
-  </script>
+  openBest.addEventListener("click", ()=>{
+    if(lastBestUrl) window.open(lastBestUrl, "_blank", "noopener");
+    else note.textContent = "لا يوجد رابط لفتحه.";
+  });
+</script>
 </body>
 </html>
