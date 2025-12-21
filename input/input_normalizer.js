@@ -1,64 +1,53 @@
-// input/input_normalizer.js
-// تنظيف/تطبيع السؤال لرفع الدقة مع أخطاء الكتابة العربية والتمطيط
-// ✅ يصدر normalizeInput (مهم لتفادي خطأ Vercel السابق)
+// input/input_normalizer.js — VINFINITY
+// ✅ مهم: export باسم normalizeInput لتجنب خطأ "لا يوفر تصديراً باسم …"
 
-function normSpaces(s = "") {
-  return String(s || "").replace(/\s+/g, " ").trim();
-}
-
-function normalizeArabic(s = "") {
-  let t = String(s || "");
-
-  // توحيد أشكال الأحرف
-  t = t
-    .replace(/[إأآا]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ة/g, "ه");
-
-  // إزالة التشكيل
-  t = t.replace(/[\u064B-\u065F\u0610-\u061A\u06D6-\u06ED]/g, "");
-
-  // إزالة مدّ (ــــ)
-  t = t.replace(/\u0640/g, "");
-
-  return t;
-}
-
-function deDuplicateLetters(s = "") {
-  // تقليل تكرار الحروف المبالغ فيه: "مبااااريات" -> "مباريات"
-  // نسمح بتكرارين كحد أعلى
-  return String(s || "").replace(/(.)\1{2,}/g, "$1$1");
-}
-
-function stripWeird(s = "") {
-  return String(s || "")
-    .replace(/\uFFFD/g, "")
-    .replace(/[^\p{L}\p{N}\s\-\_\/\:\.]/gu, " ")
-    .replace(/\s+/g, " ")
+function cleanSpaces(s=""){
+  return String(s||"")
+    .replace(/\uFFFD/g,"")
+    .replace(/\r/g," ")
+    .replace(/\t/g," ")
+    .replace(/[ ]{2,}/g," ")
     .trim();
 }
 
-export function normalizeInput({ text = "", context = "" } = {}) {
-  const raw = String(text || "");
-  const rawCtx = String(context || "");
-
-  let t = raw;
-  t = stripWeird(t);
-  t = normalizeArabic(t);
-  t = deDuplicateLetters(t);
-  t = normSpaces(t);
-
-  let ctx = rawCtx;
-  ctx = stripWeird(ctx);
-  ctx = normalizeArabic(ctx);
-  ctx = deDuplicateLetters(ctx);
-  ctx = normSpaces(ctx);
-
-  // قص طول مبالغ (يحسن السرعة)
-  if (t.length > 600) t = t.slice(0, 600);
-  if (ctx.length > 600) ctx = ctx.slice(0, 600);
-
-  return { ok: true, text: t, context: ctx, raw: raw };
+function normalizeArabic(s=""){
+  let t = String(s||"");
+  t = t
+    .replace(/[إأٱآا]/g,"ا")
+    .replace(/ى/g,"ي")
+    .replace(/ؤ/g,"و")
+    .replace(/ئ/g,"ي")
+    .replace(/ة/g,"ه");
+  // remove tashkeel
+  t = t.replace(/[\u064B-\u065F\u0670]/g,"");
+  return t;
 }
+
+function softTypos(s=""){
+  // تصحيح خفيف لأكثر الأخطاء شيوعاً (تقدر تزيد لاحقاً)
+  return String(s||"")
+    .replace(/\bمباريت\b/g,"مباريات")
+    .replace(/\bمبارياتت\b/g,"مباريات")
+    .replace(/\bمبارياات\b/g,"مباريات")
+    .replace(/\bيللاكوره\b/g,"يلا كوره")
+    .replace(/\bياللاكوره\b/g,"يلا كوره")
+    .replace(/\bيلاكوره\b/g,"يلا كوره")
+    .replace(/\bيلاكووره\b/g,"يلا كوره");
+}
+
+export function normalizeInput({ text="", context="" } = {}) {
+  const rawText = cleanSpaces(text);
+  const rawContext = cleanSpaces(context);
+
+  // normalized text (help intent + search)
+  const normText = cleanSpaces(softTypos(normalizeArabic(rawText))).toLowerCase();
+
+  return {
+    ok: true,
+    text: rawText,
+    text_normalized: normText,
+    context: rawContext,
+  };
+}
+
+export default normalizeInput;
