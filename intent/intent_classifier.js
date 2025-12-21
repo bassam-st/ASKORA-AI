@@ -1,39 +1,26 @@
 // intent/intent_classifier.js
-// Intent Classifier v2.1
-// ✅ يفهم "مباريات اليوم" حتى مع أخطاء إملائية/زيادة/نقص
-// ✅ يرجّح schedule بثقة عالية
+// مصنف نية ذكي (بدون نموذج) + درجة ثقة + كلمات مفتاحية
+// ✅ تمت إضافة نية "schedule" للمباريات + تحسين الثقة + دعم أخطاء عربية شائعة
 
 function norm(s = "") {
   return String(s || "")
+    .trim()
     .toLowerCase()
     .replace(/\uFFFD/g, "")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s+/g, " ");
 }
 
-function stripTashkeel(s = "") {
-  return String(s || "")
-    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
-}
-
-function simplifyArabic(s = "") {
-  // تطبيع عربي قوي
-  return stripTashkeel(s)
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ة/g, "ه")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي");
+function stripPunct(s = "") {
+  return s.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
 }
 
 function keywords(question = "") {
-  const t = norm(question);
+  const t = stripPunct(norm(question));
   if (!t) return [];
   const parts = t.split(" ").filter(Boolean);
 
   const stop = new Set([
-    "في","على","من","الى","إلى","عن","ما","ماذا","هل","كم","كيف","لماذا","ليش","أين","اين",
+    "في","على","من","الى","إلى","عن","ما","ماذا","هل","كم","كيف","لماذا","ليش","أين","اين","وين",
     "the","a","an","is","are","of","to","in","on","for","and","or","what","who","where","how","why"
   ]);
 
@@ -44,48 +31,6 @@ function keywords(question = "") {
     out.push(w);
   }
   return out.slice(0, 12);
-}
-
-// تشابه بسيط بين كلمتين (يدعم أخطاء حرف/حرفين)
-function fuzzyIncludes(text, needle) {
-  const t = simplifyArabic(norm(text));
-  const n = simplifyArabic(norm(needle));
-  if (!t || !n) return false;
-  if (t.includes(n)) return true;
-
-  // لو الكلمة قصيرة جدًا، لا نعمل fuzzy قوي
-  if (n.length <= 3) return false;
-
-  // match تقريبي: وجود معظم الحروف بالترتيب
-  let i = 0;
-  for (let j = 0; j < t.length && i < n.length; j++) {
-    if (t[j] === n[i]) i++;
-  }
-  // لو تم التقاط >= 80% من أحرف النية نعتبرها موجودة
-  return i / n.length >= 0.8;
-}
-
-function isScheduleQuery(qRaw = "") {
-  const q = String(qRaw || "");
-
-  // عربي/إنجليزي
-  const strong =
-    fuzzyIncludes(q, "مباريات") ||
-    fuzzyIncludes(q, "مباراة") ||
-    fuzzyIncludes(q, "جدول") ||
-    fuzzyIncludes(q, "نتائج") ||
-    fuzzyIncludes(q, "ترتيب") ||
-    /fixtures|schedule|match|matches|results|standings|points/i.test(q);
-
-  // “اليوم” + كرة/دوري… تعزز
-  const booster =
-    fuzzyIncludes(q, "اليوم") ||
-    fuzzyIncludes(q, "كرة") ||
-    fuzzyIncludes(q, "الدوري") ||
-    fuzzyIncludes(q, "كاس") ||
-    /today|tonight/i.test(q);
-
-  return strong || booster;
 }
 
 function scoreMatch(text, rules) {
@@ -101,52 +46,111 @@ export function classifyIntent({ text = "", context = "" } = {}) {
   const q = norm(qRaw);
   const ctx = norm(context);
 
-  // ✅ Hard override: مباريات = schedule
-  if (isScheduleQuery(qRaw)) {
-    return {
-      ok: true,
-      intent: "schedule",
-      confidence: 0.97,
-      keywords: keywords(qRaw),
-      debug: { forced: "schedule_fuzzy" },
-    };
-  }
-
+  // ✅ قواعد (Regex + وزن)
   const RULES = {
+    schedule: [
+      // مباريات اليوم / جدول مباريات / ماتشات
+      { re: /\b(مبار|مباريات|ماتش|match|matches)\b/i, w: 35 },
+      { re: /\b(اليوم|الليله|الآن|الان|بكره|غدا|tomorrow|today|tonight|now)\b/i, w: 25 },
+      { re: /\b(جدول|مواعيد|نتائج|نتيجه|scores|fixtures|schedule|results)\b/i, w: 25 },
+      { re: /\b(كوره|كرة|football|soccer)\b/i, w: 15 },
+      { re: /\b(يلا\s*كوره|yallakora|koora|filgoal)\b/i, w: 12 },
+    ],
+
+    who_is: [
+      { re: /^(من هو|من هي|من)\b/i, w: 40 },
+      { re: /\bwho\s+is\b/i, w: 40 },
+      { re: /\b(sir|mr|mrs|dr)\b/i, w: 10 },
+    ],
+
     define: [
       { re: /^(ما هو|ما هي|ما معنى|اشرح|عرّف|عرف)\b/i, w: 40 },
       { re: /\bwhat\s+is\b/i, w: 40 },
+      { re: /\bmeaning\b/i, w: 15 },
+      { re: /\bdefinition\b/i, w: 15 },
     ],
+
     where: [
-      { re: /^(أين|اين)\b/i, w: 45 },
+      { re: /^(أين|اين|وين)\b/i, w: 45 },
       { re: /\bwhere\b/i, w: 45 },
+      { re: /\bموقع\b/i, w: 15 },
+      { re: /\bيقع\b/i, w: 12 },
     ],
+
     how: [
       { re: /^(كيف)\b/i, w: 40 },
       { re: /\bhow\b/i, w: 40 },
       { re: /\bطريقة\b/i, w: 15 },
       { re: /\bخطوات\b/i, w: 15 },
+      { re: /\bsetup\b/i, w: 12 },
+      { re: /\binstall\b/i, w: 12 },
+      { re: /\bconfigure\b/i, w: 12 },
     ],
+
+    why: [
+      { re: /^(لماذا|ليش)\b/i, w: 45 },
+      { re: /\bwhy\b/i, w: 45 },
+      { re: /\bسبب\b/i, w: 12 },
+    ],
+
     how_many: [
       { re: /\bكم\b/i, w: 35 },
       { re: /\bhow\s+many\b/i, w: 40 },
       { re: /\bhow\s+much\b/i, w: 35 },
+      { re: /\bعدد\b/i, w: 12 },
       { re: /\bسعر\b/i, w: 15 },
       { re: /\bتكلفة\b/i, w: 15 },
+      { re: /\bprice\b/i, w: 12 },
+      { re: /\bcost\b/i, w: 12 },
     ],
+
+    compare: [
+      { re: /\bالفرق\b/i, w: 25 },
+      { re: /\bقارن\b/i, w: 25 },
+      { re: /\bأفضل\b/i, w: 15 },
+      { re: /\bvs\b/i, w: 20 },
+      { re: /\bcompare\b/i, w: 25 },
+      { re: /\bdifference\b/i, w: 25 },
+      { re: /\bwhich\s+is\s+better\b/i, w: 25 },
+    ],
+
+    translate: [
+      { re: /\bترجم\b/i, w: 35 },
+      { re: /\btranslate\b/i, w: 35 },
+      { re: /\bبالانجليزي\b/i, w: 20 },
+      { re: /\bبالإنجليزي\b/i, w: 20 },
+      { re: /\benglish\b/i, w: 12 },
+      { re: /\barabic\b/i, w: 12 },
+    ],
+
+    summarize: [
+      { re: /\bتلخيص\b/i, w: 35 },
+      { re: /\bsummary\b/i, w: 35 },
+      { re: /\bsummarize\b/i, w: 35 },
+      { re: /\bاختصر\b/i, w: 25 },
+    ],
+
     news: [
       { re: /\bآخر الأخبار\b/i, w: 25 },
       { re: /\bاخبار\b/i, w: 20 },
       { re: /\bnews\b/i, w: 25 },
+      { re: /\bbreaking\b/i, w: 18 },
     ],
+
     general: [{ re: /.*/i, w: 1 }],
   };
 
   const scores = {};
   for (const k of Object.keys(RULES)) scores[k] = scoreMatch(q, RULES[k]);
 
+  // تعزيز حسب السياق
   if (ctx.includes("vercel") || ctx.includes("github") || ctx.includes("deploy")) scores.how += 10;
+  if (ctx.includes("بند") || ctx.includes("hs") || ctx.includes("جمارك")) {
+    scores.how_many += 10;
+    scores.define += 6;
+  }
 
+  // اختيار أعلى نية
   let best = "general";
   let bestScore = -1;
   for (const [k, v] of Object.entries(scores)) {
@@ -156,23 +160,27 @@ export function classifyIntent({ text = "", context = "" } = {}) {
     }
   }
 
+  // حساب الثقة (0..1)
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   const top1 = sorted[0] || ["general", 0];
   const top2 = sorted[1] || ["general", 0];
+
   const margin = Math.max(0, top1[1] - top2[1]);
-
   let confidence = 0.45;
-  if (top1[1] >= 40) confidence = 0.85;
-  else if (top1[1] >= 25) confidence = 0.7;
-  else if (top1[1] >= 15) confidence = 0.6;
 
-  confidence = Math.min(0.98, confidence + Math.min(0.25, margin / 120));
+  if (top1[1] >= 55) confidence = 0.92;
+  else if (top1[1] >= 45) confidence = 0.86;
+  else if (top1[1] >= 35) confidence = 0.78;
+  else if (top1[1] >= 25) confidence = 0.68;
+  else confidence = 0.50;
+
+  confidence = Math.min(0.98, confidence + Math.min(0.25, margin / 100));
 
   return {
     ok: true,
     intent: best,
     confidence,
     keywords: keywords(qRaw),
-    debug: { scores },
+    // debug: { scores }, // لو تريد تخفيف المخرجات احذفها
   };
 }
