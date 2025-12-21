@@ -1,50 +1,76 @@
 // input/input_normalizer.js
-// 🔹 تطبيع إدخال ذكي – مستوى متقدم
-// ينظف السؤال + يمنع أخطاء JSON + يساعد النية والتلخيص
+// تنظيف السؤال + استخراج سياق بسيط + تقليم الطول
+// Export: normalizeInput({text, context}) -> { text, context, meta }
 
-function cleanText(s = "") {
+function cleanSpaces(s = "") {
   return String(s || "")
-    .replace(/\uFFFD/g, "")          // رموز تالفة
-    .replace(/[<>]/g, "")            // منع HTML
-    .replace(/\s+/g, " ")            // توحيد المسافات
+    .replace(/\uFFFD/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-function detectLanguage(text = "") {
-  if (/[\u0600-\u06FF]/.test(text)) return "ar";
-  if (/[a-zA-Z]/.test(text)) return "en";
-  return "unknown";
+function stripDangerous(s = "") {
+  // يمنع إدخال ضخم أو رموز غريبة جداً
+  return cleanSpaces(s).replace(/[\u0000-\u001F]/g, " ").trim();
 }
 
-function normalizeQuestion(text = "") {
-  let t = cleanText(text);
-
-  // إزالة علامات مبالغ فيها
-  t = t.replace(/([؟?!.,]){2,}/g, "$1");
-
-  // سؤال قصير جدًا
-  const tooShort = t.length < 2;
-
-  return {
-    text: t,
-    empty: !t,
-    tooShort,
-  };
+function clip(s = "", max = 2000) {
+  const t = String(s || "");
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1) + "…";
 }
 
+function normalizeArabic(s = "") {
+  // توحيد بسيط جدًا بدون كسر الكلمات
+  return String(s || "")
+    .replace(/[إأآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");
+}
+
+function looksLikeUrl(s = "") {
+  const t = String(s || "").trim();
+  return /^https?:\/\/\S+/i.test(t);
+}
+
+function enrichContext({ text, context }) {
+  const t = (text || "").toLowerCase();
+  let ctx = (context || "").toLowerCase();
+
+  // إشارات مفيدة للمصنف/المحرك
+  if (t.includes("vercel") || t.includes("deploy") || t.includes("نشر")) ctx += " vercel deploy";
+  if (t.includes("github") || t.includes("repo") || t.includes("جيت")) ctx += " github repo";
+  if (t.includes("hs") || t.includes("بند") || t.includes("جمارك")) ctx += " customs hs";
+
+  // لو السؤال مجرد رابط، نضيف سياق أنه URL
+  if (looksLikeUrl(text)) ctx += " url";
+
+  return cleanSpaces(ctx);
+}
+
+/**
+ * normalizeInput
+ * @param {{text:string, context?:string}} param0
+ * @returns {{text:string, context:string, meta:Object}}
+ */
 export function normalizeInput({ text = "", context = "" } = {}) {
-  const q = normalizeQuestion(text);
-  const ctx = cleanText(context);
+  let q = stripDangerous(text);
+  let ctx = stripDangerous(context);
 
-  const lang = detectLanguage(q.text);
+  // تطويل/تقليم ذكي
+  q = clip(q, 1200);
+  ctx = clip(ctx, 800);
 
-  return {
-    ok: true,
-    text: q.text,
-    context: ctx,
-    lang,
-    empty: q.empty,
-    tooShort: q.tooShort,
-    length: q.text.length,
+  // لا نغير النص النهائي كثيرًا (بس نسخة meta للتصنيف إن أحببت)
+  const meta = {
+    normalized_for_match: normalizeArabic(q.toLowerCase()),
+    is_url: looksLikeUrl(q),
+    len: q.length,
   };
+
+  ctx = enrichContext({ text: q, context: ctx });
+
+  return { text: q, context: ctx, meta };
 }
+
+export default normalizeInput;
