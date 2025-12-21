@@ -2,56 +2,321 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <title>ASKORA AI</title>
+  <title>ASKORA AI (Test)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; background:#0f0f14; color:#fff; margin:0; padding:20px; }
-    h1 { text-align:center; margin:0 0 16px; }
-    .container { max-width:760px; margin:auto; background:#161622; padding:18px; border-radius:12px; box-shadow:0 0 30px rgba(0,0,0,.4); }
+    :root{
+      --bg:#0f0f14;
+      --card:#161622;
+      --panel:#0b0b12;
+      --text:#ffffff;
+      --muted:#b8b8c9;
+      --border:rgba(255,255,255,.10);
+      --btn:#7c3aed;
+      --btn2:#2a2a3b;
+      --errbg:#2b0b0b;
+      --errtx:#ffb4b4;
+      --ok:#22c55e;
+      --shadow: 0 0 30px rgba(0,0,0,.45);
+      --radius: 14px;
+    }
 
-    textarea { width:100%; min-height:110px; padding:12px; border-radius:12px; border:none; resize:vertical; font-size:16px; box-sizing:border-box; }
-    button { margin-top:10px; padding:10px 18px; font-size:16px; border-radius:12px; border:none; cursor:pointer; background:#7c3aed; color:#fff; }
-    button:disabled { opacity:0.6; cursor:not-allowed; }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      padding:18px 14px 40px;
+      font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
 
-    .sectionTitle { margin:14px 0 8px; font-weight:800; opacity:.95; }
-    .box { background:#0b0b12; border-radius:12px; padding:14px; line-height:1.75; border:1px solid rgba(255,255,255,.06); }
+    h1{
+      margin: 10px 0 16px;
+      text-align:center;
+      font-size: 28px;
+      letter-spacing: .3px;
+    }
 
-    .summary { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+    .container{
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--card);
+      padding: 16px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
 
-    .sourcesWrap { margin-top:10px; display:flex; flex-direction:column; gap:10px; }
-    .srcCard { background:#10101a; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:12px; overflow:hidden; }
-    .srcTitle { font-weight:800; margin-bottom:6px; }
-    .srcSnippet { opacity:.92; font-size:14px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
-    .srcLink { display:block; margin-top:8px; font-size:13px; color:#9bd0ff; text-decoration:none; overflow-wrap:anywhere; word-break:break-word; }
+    textarea{
+      width:100%;
+      min-height: 120px;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color:#111;
+      resize: vertical;
+      font-size: 16px;
+      outline: none;
+    }
 
-    .note { margin-top:10px; font-size:13px; opacity:0.9; line-height:1.6; }
-    .chip { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; margin-left:8px; background:rgba(124,58,237,.25); border:1px solid rgba(124,58,237,.35); }
+    .row{
+      display:flex;
+      gap:10px;
+      margin-top:10px;
+      align-items:center;
+      justify-content:flex-start;
+      flex-wrap: wrap;
+    }
 
-    .error { margin-top:16px; padding:12px; background:#2b0b0b; color:#ffb4b4; border-radius:12px; font-family:monospace; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+    button{
+      padding: 11px 18px;
+      font-size: 16px;
+      border-radius: 12px;
+      border: none;
+      cursor:pointer;
+      background: var(--btn);
+      color: #fff;
+      transition: transform .06s ease;
+    }
+    button:active{ transform: scale(.99); }
+    button:disabled{
+      opacity:.6;
+      cursor:not-allowed;
+    }
+
+    .btn-secondary{
+      background: var(--btn2);
+      border: 1px solid var(--border);
+    }
+
+    .status{
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      display:flex;
+      gap:10px;
+      flex-wrap: wrap;
+      align-items:center;
+    }
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      color: #eaeaf5;
+      font-size: 12px;
+    }
+    .dot{
+      width:8px;height:8px;border-radius:50%;
+      background: var(--ok);
+      display:inline-block;
+    }
+
+    .panel{
+      margin-top: 14px;
+      padding: 14px;
+      background: var(--panel);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .panel h2{
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: #e9e9f6;
+      opacity: .95;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap:10px;
+    }
+
+    .panel .content{
+      white-space: pre-wrap;
+      line-height: 1.8;
+      font-size: 15px;
+      color: #fff;
+    }
+
+    .sources-wrap{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .source-item{
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      overflow:hidden; /* يمنع خروج النص */
+    }
+
+    .source-title{
+      font-weight: 700;
+      font-size: 14px;
+      margin: 0 0 6px;
+      color: #f4f4ff;
+    }
+
+    .source-link{
+      display:block;
+      color: #9bd3ff;
+      text-decoration: none;
+      direction:ltr;           /* الرابط LTR */
+      unicode-bidi: plaintext; /* يحافظ على ترتيب الرابط */
+      overflow-wrap:anywhere;  /* يكسر الرابط */
+      word-break: break-word;
+      line-height: 1.5;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .source-link:hover{ text-decoration: underline; }
+
+    .source-snippet{
+      color: #d7d7ea;
+      font-size: 13px;
+      line-height: 1.7;
+      opacity: .95;
+    }
+
+    .error{
+      margin-top: 14px;
+      padding: 12px;
+      background: var(--errbg);
+      color: var(--errtx);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      overflow-wrap:anywhere;
+      word-break: break-word;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .muted{
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+      line-height: 1.7;
+      opacity: .95;
+    }
+
+    .tiny{
+      font-size: 12px;
+      opacity: .85;
+    }
+
+    .sep{
+      height:1px;
+      background: rgba(255,255,255,.08);
+      margin: 12px 0;
+    }
   </style>
 </head>
 <body>
 
-  <h1>ASKORA AI</h1>
+  <h1>ASKORA AI (Test)</h1>
 
   <div class="container">
     <textarea id="question" placeholder="اكتب سؤالك هنا..."></textarea>
-    <br />
-    <button id="askBtn">إرسال</button>
-    <div id="result" style="margin-top:12px;"></div>
+
+    <div class="row">
+      <button id="askBtn">إرسال</button>
+      <button id="copyBtn" class="btn-secondary" disabled>نسخ الملخص</button>
+      <button id="clearBtn" class="btn-secondary">مسح</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <!-- ✅ الملخص (فوق) -->
+    <div class="panel" id="summaryPanel" style="display:none;">
+      <h2>
+        <span>الملخص</span>
+        <span class="tiny" id="summaryMeta"></span>
+      </h2>
+      <div class="content" id="summaryText"></div>
+    </div>
+
+    <!-- ✅ المصادر (تحت) -->
+    <div class="panel" id="sourcesPanel" style="display:none;">
+      <h2>
+        <span>المصادر</span>
+        <span class="tiny" id="sourcesMeta"></span>
+      </h2>
+      <div class="sources-wrap" id="sourcesList"></div>
+    </div>
+
+    <div id="errorBox" class="error" style="display:none;"></div>
+
+    <div class="muted">
+      ملاحظة: إذا رجع السيرفر رد غير JSON (مثلاً صفحة HTML خطأ)، سيظهر لك محتوى الخطأ هنا بدل رسالة
+      <span class="tiny">Unexpected token</span>.
+    </div>
   </div>
 
 <script>
   const btn = document.getElementById("askBtn");
+  const copyBtn = document.getElementById("copyBtn");
+  const clearBtn = document.getElementById("clearBtn");
+
   const questionInput = document.getElementById("question");
-  const resultDiv = document.getElementById("result");
+
+  const statusDiv = document.getElementById("status");
+  const errorBox = document.getElementById("errorBox");
+
+  const summaryPanel = document.getElementById("summaryPanel");
+  const summaryText  = document.getElementById("summaryText");
+  const summaryMeta  = document.getElementById("summaryMeta");
+
+  const sourcesPanel = document.getElementById("sourcesPanel");
+  const sourcesList  = document.getElementById("sourcesList");
+  const sourcesMeta  = document.getElementById("sourcesMeta");
+
+  let lastAnswer = "";
+
+  clearBtn.onclick = () => {
+    questionInput.value = "";
+    hideAll();
+    questionInput.focus();
+  };
+
+  copyBtn.onclick = async () => {
+    if (!lastAnswer) return;
+    try {
+      await navigator.clipboard.writeText(lastAnswer);
+      toast("✅ تم نسخ الملخص");
+    } catch {
+      toast("❌ لم أستطع النسخ (المتصفح منع)");
+    }
+  };
+
+  // Enter للإرسال (Shift+Enter سطر جديد)
+  questionInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      btn.click();
+    }
+  });
 
   btn.onclick = async () => {
     const question = questionInput.value.trim();
     if (!question) return;
 
+    hideAll();
     btn.disabled = true;
-    resultDiv.innerHTML = `<div class="box">⏳ جاري المعالجة...</div>`;
+    copyBtn.disabled = true;
+
+    setStatus([
+      badge("جاري التنفيذ...", true),
+      badge("API: /api/askora", false)
+    ]);
 
     try {
       const res = await fetch("/api/askora", {
@@ -60,88 +325,162 @@
         body: JSON.stringify({ question })
       });
 
-      // ✅ آمن: حتى لو السيرفر رجّع نص
+      // ✅ اقرأ كنص أولاً ثم حاول JSON
       const raw = await res.text();
-      let data = null;
-      try { data = JSON.parse(raw); } catch { data = null; }
 
-      if (!data || data.ok !== true) {
-        const msg = data?.error || data?.message || "خطأ غير معروف (الرد ليس JSON).";
-        resultDiv.innerHTML = `<div class="error">${escapeHtml(msg)}\n\nRAW:\n${escapeHtml(raw.slice(0, 900))}</div>`;
+      let data = null;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        // ❌ السيرفر رجّع HTML/نص
+        showError("Server returned non-JSON:\n\n" + raw.slice(0, 900));
+        setStatus([badge("فشل: رد غير JSON", false)]);
         return;
       }
 
-      const answerText = String(data.answer ?? "");
+      if (!res.ok || !data || data.ok !== true) {
+        const msg = (data && (data.error || data.message))
+          ? (data.error || data.message)
+          : "خطأ غير معروف";
+        showError(msg);
+        setStatus([badge("فشل الطلب", false)]);
+        return;
+      }
+
+      const answerText = (data.answer ?? "").toString().trim();
+      const note = (data.note ?? "").toString().trim();
+      const intent = (data.intent ?? "").toString().trim();
+
+      // ✅ الملخص
+      lastAnswer = answerText;
+      summaryText.textContent = answerText || "—";
+      summaryMeta.textContent = [
+        note ? ("ℹ️ " + note) : "",
+        intent ? ("• intent: " + intent) : ""
+      ].filter(Boolean).join(" ");
+
+      summaryPanel.style.display = "block";
+      copyBtn.disabled = !answerText;
+
+      // ✅ المصادر
       const sourcesArr = Array.isArray(data.sources) ? data.sources : [];
-      const conf = data.confidence || null;
+      renderSources(sourcesArr);
 
-      // --- Summary box (Top) ---
-      let html = `
-        <div class="sectionTitle">الملخص</div>
-        <div class="box summary">${escapeHtml(answerText)}</div>
-      `;
-
-      // --- Confidence ---
-      if (conf && typeof conf === "object") {
-        const pct = (typeof conf.score === "number")
-          ? Math.round(conf.score * 100)
-          : null;
-
-        const level = conf.level ? String(conf.level) : "غير معروف";
-        const reason = conf.reason ? String(conf.reason) : "";
-
-        html += `
-          <div class="note">
-            <span class="chip">🔎 الثقة: ${escapeHtml(level)}${pct !== null ? " (" + pct + "%)" : ""}</span>
-            ${reason ? "<div style='margin-top:6px;'>" + escapeHtml(reason) + "</div>" : ""}
-          </div>
-        `;
-      }
-
-      // --- Sources box (Bottom) ---
-      html += `<div class="sectionTitle">المصادر</div>`;
-
-      if (sourcesArr.length === 0) {
-        html += `<div class="box">لا توجد مصادر حالياً.</div>`;
-      } else {
-        html += `<div class="sourcesWrap">` + sourcesArr.slice(0, 6).map(s => {
-          const title = s?.title ? String(s.title) : "مصدر";
-          const snip  = s?.content ? String(s.content) : "";
-          const link  = s?.link ? String(s.link) : "";
-          return `
-            <div class="srcCard">
-              <div class="srcTitle">${escapeHtml(title)}</div>
-              ${snip ? `<div class="srcSnippet">${escapeHtml(snip)}</div>` : ""}
-              ${link ? `<a class="srcLink" href="${escapeAttr(link)}" target="_blank" rel="noopener">${escapeHtml(link)}</a>` : ""}
-            </div>
-          `;
-        }).join("") + `</div>`;
-      }
-
-      if (data.note) {
-        html += `<div class="note">ℹ️ ${escapeHtml(String(data.note))}</div>`;
-      }
-
-      resultDiv.innerHTML = html;
+      setStatus([
+        badge("تم", true),
+        note ? badge(note, false) : null
+      ].filter(Boolean));
 
     } catch (err) {
-      resultDiv.innerHTML = `<div class="error">${escapeHtml(err.message || String(err))}</div>`;
+      showError(String(err?.message || err || "Unknown error"));
+      setStatus([badge("خطأ في الاتصال", false)]);
     } finally {
       btn.disabled = false;
     }
   };
 
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  function renderSources(sourcesArr) {
+    sourcesList.innerHTML = "";
+
+    const list = (Array.isArray(sourcesArr) ? sourcesArr : []).slice(0, 8);
+
+    if (!list.length) {
+      sourcesPanel.style.display = "none";
+      sourcesMeta.textContent = "";
+      return;
+    }
+
+    sourcesMeta.textContent = `(${list.length})`;
+
+    list.forEach((s, idx) => {
+      const title = (s && s.title) ? String(s.title) : `مصدر ${idx + 1}`;
+      const link  = (s && (s.link || s.url)) ? String(s.link || s.url) : "";
+      const snip  = (s && (s.content || s.snippet || s.text)) ? String(s.content || s.snippet || s.text) : "";
+
+      const item = document.createElement("div");
+      item.className = "source-item";
+
+      const t = document.createElement("div");
+      t.className = "source-title";
+      t.textContent = title;
+
+      item.appendChild(t);
+
+      if (link) {
+        const a = document.createElement("a");
+        a.className = "source-link";
+        a.href = link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = link;
+        item.appendChild(a);
+      }
+
+      if (snip) {
+        const p = document.createElement("div");
+        p.className = "source-snippet";
+        p.textContent = snip.length > 360 ? (snip.slice(0, 360) + "…") : snip;
+        item.appendChild(p);
+      }
+
+      sourcesList.appendChild(item);
+    });
+
+    sourcesPanel.style.display = "block";
   }
-  function escapeAttr(str) {
-    // بسيط وآمن للروابط
-    return String(str).replaceAll('"', "%22").replaceAll("'", "%27");
+
+  function hideAll(){
+    errorBox.style.display = "none";
+    errorBox.textContent = "";
+
+    summaryPanel.style.display = "none";
+    summaryText.textContent = "";
+    summaryMeta.textContent = "";
+
+    sourcesPanel.style.display = "none";
+    sourcesList.innerHTML = "";
+    sourcesMeta.textContent = "";
+
+    statusDiv.innerHTML = "";
+    lastAnswer = "";
+  }
+
+  function showError(text){
+    errorBox.style.display = "block";
+    errorBox.textContent = text;
+  }
+
+  function setStatus(badges){
+    statusDiv.innerHTML = "";
+    badges.forEach(b => statusDiv.appendChild(b));
+  }
+
+  function badge(text, ok){
+    const el = document.createElement("span");
+    el.className = "badge";
+    if (ok){
+      const d = document.createElement("span");
+      d.className = "dot";
+      el.appendChild(d);
+    }
+    const t = document.createElement("span");
+    t.textContent = text;
+    el.appendChild(t);
+    return el;
+  }
+
+  function toast(msg){
+    // Toast بسيط
+    const t = document.createElement("div");
+    t.className = "badge";
+    t.style.position = "fixed";
+    t.style.left = "12px";
+    t.style.bottom = "12px";
+    t.style.zIndex = "9999";
+    t.style.maxWidth = "80vw";
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 1700);
   }
 </script>
 
