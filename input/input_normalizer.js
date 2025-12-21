@@ -1,76 +1,64 @@
 // input/input_normalizer.js
-// تنظيف السؤال + استخراج سياق بسيط + تقليم الطول
-// Export: normalizeInput({text, context}) -> { text, context, meta }
+// تنظيف/تطبيع السؤال لرفع الدقة مع أخطاء الكتابة العربية والتمطيط
+// ✅ يصدر normalizeInput (مهم لتفادي خطأ Vercel السابق)
 
-function cleanSpaces(s = "") {
+function normSpaces(s = "") {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeArabic(s = "") {
+  let t = String(s || "");
+
+  // توحيد أشكال الأحرف
+  t = t
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ة/g, "ه");
+
+  // إزالة التشكيل
+  t = t.replace(/[\u064B-\u065F\u0610-\u061A\u06D6-\u06ED]/g, "");
+
+  // إزالة مدّ (ــــ)
+  t = t.replace(/\u0640/g, "");
+
+  return t;
+}
+
+function deDuplicateLetters(s = "") {
+  // تقليل تكرار الحروف المبالغ فيه: "مبااااريات" -> "مباريات"
+  // نسمح بتكرارين كحد أعلى
+  return String(s || "").replace(/(.)\1{2,}/g, "$1$1");
+}
+
+function stripWeird(s = "") {
   return String(s || "")
     .replace(/\uFFFD/g, "")
+    .replace(/[^\p{L}\p{N}\s\-\_\/\:\.]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function stripDangerous(s = "") {
-  // يمنع إدخال ضخم أو رموز غريبة جداً
-  return cleanSpaces(s).replace(/[\u0000-\u001F]/g, " ").trim();
-}
-
-function clip(s = "", max = 2000) {
-  const t = String(s || "");
-  if (t.length <= max) return t;
-  return t.slice(0, max - 1) + "…";
-}
-
-function normalizeArabic(s = "") {
-  // توحيد بسيط جدًا بدون كسر الكلمات
-  return String(s || "")
-    .replace(/[إأآ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه");
-}
-
-function looksLikeUrl(s = "") {
-  const t = String(s || "").trim();
-  return /^https?:\/\/\S+/i.test(t);
-}
-
-function enrichContext({ text, context }) {
-  const t = (text || "").toLowerCase();
-  let ctx = (context || "").toLowerCase();
-
-  // إشارات مفيدة للمصنف/المحرك
-  if (t.includes("vercel") || t.includes("deploy") || t.includes("نشر")) ctx += " vercel deploy";
-  if (t.includes("github") || t.includes("repo") || t.includes("جيت")) ctx += " github repo";
-  if (t.includes("hs") || t.includes("بند") || t.includes("جمارك")) ctx += " customs hs";
-
-  // لو السؤال مجرد رابط، نضيف سياق أنه URL
-  if (looksLikeUrl(text)) ctx += " url";
-
-  return cleanSpaces(ctx);
-}
-
-/**
- * normalizeInput
- * @param {{text:string, context?:string}} param0
- * @returns {{text:string, context:string, meta:Object}}
- */
 export function normalizeInput({ text = "", context = "" } = {}) {
-  let q = stripDangerous(text);
-  let ctx = stripDangerous(context);
+  const raw = String(text || "");
+  const rawCtx = String(context || "");
 
-  // تطويل/تقليم ذكي
-  q = clip(q, 1200);
-  ctx = clip(ctx, 800);
+  let t = raw;
+  t = stripWeird(t);
+  t = normalizeArabic(t);
+  t = deDuplicateLetters(t);
+  t = normSpaces(t);
 
-  // لا نغير النص النهائي كثيرًا (بس نسخة meta للتصنيف إن أحببت)
-  const meta = {
-    normalized_for_match: normalizeArabic(q.toLowerCase()),
-    is_url: looksLikeUrl(q),
-    len: q.length,
-  };
+  let ctx = rawCtx;
+  ctx = stripWeird(ctx);
+  ctx = normalizeArabic(ctx);
+  ctx = deDuplicateLetters(ctx);
+  ctx = normSpaces(ctx);
 
-  ctx = enrichContext({ text: q, context: ctx });
+  // قص طول مبالغ (يحسن السرعة)
+  if (t.length > 600) t = t.slice(0, 600);
+  if (ctx.length > 600) ctx = ctx.slice(0, 600);
 
-  return { text: q, context: ctx, meta };
+  return { ok: true, text: t, context: ctx, raw: raw };
 }
-
-export default normalizeInput;
