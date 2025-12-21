@@ -1,488 +1,331 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ASKORA AI (Test)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg:#0f0f14;
-      --card:#161622;
-      --panel:#0b0b12;
-      --text:#ffffff;
-      --muted:#b8b8c9;
-      --border:rgba(255,255,255,.10);
-      --btn:#7c3aed;
-      --btn2:#2a2a3b;
-      --errbg:#2b0b0b;
-      --errtx:#ffb4b4;
-      --ok:#22c55e;
-      --shadow: 0 0 30px rgba(0,0,0,.45);
-      --radius: 14px;
+      --bg:#0b0b12; --card:#12122a; --card2:#0f1020;
+      --txt:#e7e7f0; --muted:#a9a9c2;
+      --border:rgba(255,255,255,.08);
+      --purple:#7c3aed; --purple2:#6d28d9;
+      --btn:#1b1c35;
+      --radius:16px;
     }
-
-    *{ box-sizing:border-box; }
+    *{box-sizing:border-box}
     body{
-      margin:0;
-      padding:18px 14px 40px;
-      font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      margin:0; font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;
+      background: radial-gradient(1200px 600px at 50% 0%, rgba(124,58,237,.22), transparent 60%), var(--bg);
+      color:var(--txt);
+      min-height:100vh;
+      display:flex; justify-content:center; align-items:flex-start;
+      padding:28px 14px;
     }
-
-    h1{
-      margin: 10px 0 16px;
-      text-align:center;
-      font-size: 28px;
-      letter-spacing: .3px;
-    }
-
-    .container{
-      max-width: 760px;
-      margin: 0 auto;
-      background: var(--card);
-      padding: 16px;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-    }
-
-    textarea{
-      width:100%;
-      min-height: 120px;
-      padding: 12px 12px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #ffffff;
-      color:#111;
-      resize: vertical;
-      font-size: 16px;
-      outline: none;
-    }
-
-    .row{
-      display:flex;
-      gap:10px;
-      margin-top:10px;
-      align-items:center;
-      justify-content:flex-start;
-      flex-wrap: wrap;
-    }
-
-    button{
-      padding: 11px 18px;
-      font-size: 16px;
-      border-radius: 12px;
-      border: none;
-      cursor:pointer;
-      background: var(--btn);
-      color: #fff;
-      transition: transform .06s ease;
-    }
-    button:active{ transform: scale(.99); }
-    button:disabled{
-      opacity:.6;
-      cursor:not-allowed;
-    }
-
-    .btn-secondary{
-      background: var(--btn2);
-      border: 1px solid var(--border);
-    }
-
-    .status{
-      margin-top: 10px;
-      font-size: 13px;
-      color: var(--muted);
-      display:flex;
-      gap:10px;
-      flex-wrap: wrap;
-      align-items:center;
-    }
-
-    .badge{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      padding: 5px 10px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(255,255,255,.06);
-      color: #eaeaf5;
-      font-size: 12px;
-    }
-    .dot{
-      width:8px;height:8px;border-radius:50%;
-      background: var(--ok);
-      display:inline-block;
-    }
-
+    .wrap{width:min(720px, 100%);}
+    h1{margin:8px 0 18px; text-align:center; letter-spacing:.5px; font-size:28px;}
     .panel{
-      margin-top: 14px;
-      padding: 14px;
-      background: var(--panel);
-      border-radius: 12px;
-      border: 1px solid var(--border);
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid var(--border);
+      border-radius:22px;
+      padding:18px;
+      box-shadow:0 12px 40px rgba(0,0,0,.45);
+    }
+    textarea{
+      width:100%; min-height:110px; resize:vertical;
+      border-radius:18px; border:1px solid var(--border);
+      background:#fff; color:#111; padding:14px; font-size:18px;
+      outline:none;
+    }
+    .row{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center;}
+    .btn{
+      border:1px solid var(--border);
+      background:var(--btn); color:var(--txt);
+      padding:12px 16px; border-radius:14px;
+      font-size:16px; cursor:pointer;
+    }
+    .btn.primary{
+      background:linear-gradient(180deg, var(--purple), var(--purple2));
+      border-color:rgba(124,58,237,.55);
+      min-width:120px;
+    }
+    .btn:disabled{opacity:.6; cursor:not-allowed}
+    .pill{
+      margin-inline-start:auto;
+      display:flex; align-items:center; gap:8px;
+      padding:10px 12px; border-radius:999px;
+      border:1px solid var(--border); background:rgba(255,255,255,.03);
+      color:var(--muted); font-size:14px;
+    }
+    .dot{width:10px;height:10px;border-radius:50%; background:#22c55e}
+    .meta{
+      margin-top:12px;
+      color:var(--muted); font-size:14px;
+      border:1px solid var(--border); background:rgba(255,255,255,.03);
+      padding:10px 12px; border-radius:999px;
     }
 
-    .panel h2{
-      margin: 0 0 10px;
-      font-size: 15px;
-      color: #e9e9f6;
-      opacity: .95;
-      display:flex;
-      align-items:center;
-      justify-content: space-between;
-      gap:10px;
+    .card{
+      margin-top:14px;
+      background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--border);
+      border-radius:20px;
+      padding:14px;
+    }
+    .card h3{margin:0 0 10px; font-size:18px; color:#ddd;}
+    .answer{
+      white-space:pre-wrap;
+      line-height:1.85;
+      font-size:16px;
+      color:#f0f0ff;
+    }
+    .actions{
+      display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;
+    }
+    .actions a{
+      text-decoration:none;
+    }
+    .actionBtn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:12px 14px;
+      border-radius:14px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.04);
+      color:var(--txt);
+      min-width:160px;
+    }
+    .actionBtn.primary{
+      background:linear-gradient(180deg, rgba(124,58,237,.9), rgba(109,40,217,.9));
+      border-color:rgba(124,58,237,.55);
     }
 
-    .panel .content{
-      white-space: pre-wrap;
-      line-height: 1.8;
-      font-size: 15px;
-      color: #fff;
+    .src{
+      margin-top:10px;
+      border-top:1px dashed rgba(255,255,255,.12);
+      padding-top:10px;
+      color:var(--muted);
+      font-size:14px;
     }
-
-    .sources-wrap{
-      display:flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .source-item{
-      padding: 12px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.04);
-      overflow:hidden; /* يمنع خروج النص */
-    }
-
-    .source-title{
-      font-weight: 700;
-      font-size: 14px;
-      margin: 0 0 6px;
-      color: #f4f4ff;
-    }
-
-    .source-link{
-      display:block;
-      color: #9bd3ff;
-      text-decoration: none;
-      direction:ltr;           /* الرابط LTR */
-      unicode-bidi: plaintext; /* يحافظ على ترتيب الرابط */
-      overflow-wrap:anywhere;  /* يكسر الرابط */
-      word-break: break-word;
-      line-height: 1.5;
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
-    .source-link:hover{ text-decoration: underline; }
-
-    .source-snippet{
-      color: #d7d7ea;
-      font-size: 13px;
-      line-height: 1.7;
-      opacity: .95;
-    }
-
-    .error{
-      margin-top: 14px;
-      padding: 12px;
-      background: var(--errbg);
-      color: var(--errtx);
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,.12);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      white-space: pre-wrap;
-      overflow-wrap:anywhere;
-      word-break: break-word;
-      line-height: 1.55;
-      font-size: 13px;
-    }
-
-    .muted{
-      color: var(--muted);
-      font-size: 13px;
-      margin-top: 10px;
-      line-height: 1.7;
-      opacity: .95;
-    }
-
-    .tiny{
-      font-size: 12px;
-      opacity: .85;
-    }
-
-    .sep{
-      height:1px;
-      background: rgba(255,255,255,.08);
-      margin: 12px 0;
+    .src a{color:#9aa7ff}
+    label.chk{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:14px;}
+    input[type="checkbox"]{transform:scale(1.15)}
+    .err{
+      margin-top:12px;
+      background:rgba(220,38,38,.16);
+      border:1px solid rgba(220,38,38,.35);
+      padding:12px 14px;
+      border-radius:16px;
+      color:#ffd1d1;
+      white-space:pre-wrap;
     }
   </style>
 </head>
 <body>
+  <div class="wrap">
+    <h1>ASKORA AI (Test)</h1>
 
-  <h1>ASKORA AI (Test)</h1>
+    <div class="panel">
+      <textarea id="q" placeholder="اكتب سؤالك هنا..."></textarea>
 
-  <div class="container">
-    <textarea id="question" placeholder="اكتب سؤالك هنا..."></textarea>
+      <div class="row">
+        <button class="btn primary" id="send">إرسال!</button>
+        <button class="btn" id="copy">نسخ الملخص</button>
+        <button class="btn" id="clear">مسح</button>
 
-    <div class="row">
-      <button id="askBtn">إرسال</button>
-      <button id="copyBtn" class="btn-secondary" disabled>نسخ الملخص</button>
-      <button id="clearBtn" class="btn-secondary">مسح</button>
-    </div>
+        <label class="chk">
+          <input type="checkbox" id="autoOpen" checked />
+          فتح تلقائي لروابط المباريات
+        </label>
 
-    <div class="status" id="status"></div>
+        <div class="pill"><span class="dot" id="dot"></span><span id="st">جاهز</span></div>
+      </div>
 
-    <!-- ✅ الملخص (فوق) -->
-    <div class="panel" id="summaryPanel" style="display:none;">
-      <h2>
-        <span>الملخص</span>
-        <span class="tiny" id="summaryMeta"></span>
-      </h2>
-      <div class="content" id="summaryText"></div>
-    </div>
+      <div class="meta" id="note">—</div>
 
-    <!-- ✅ المصادر (تحت) -->
-    <div class="panel" id="sourcesPanel" style="display:none;">
-      <h2>
-        <span>المصادر</span>
-        <span class="tiny" id="sourcesMeta"></span>
-      </h2>
-      <div class="sources-wrap" id="sourcesList"></div>
-    </div>
-
-    <div id="errorBox" class="error" style="display:none;"></div>
-
-    <div class="muted">
-      ملاحظة: إذا رجع السيرفر رد غير JSON (مثلاً صفحة HTML خطأ)، سيظهر لك محتوى الخطأ هنا بدل رسالة
-      <span class="tiny">Unexpected token</span>.
+      <div id="out"></div>
+      <div id="err" class="err" style="display:none;"></div>
     </div>
   </div>
 
-<script>
-  const btn = document.getElementById("askBtn");
-  const copyBtn = document.getElementById("copyBtn");
-  const clearBtn = document.getElementById("clearBtn");
+  <script type="module">
+    const $ = (id)=>document.getElementById(id);
 
-  const questionInput = document.getElementById("question");
+    const q = $("q");
+    const send = $("send");
+    const copy = $("copy");
+    const clear = $("clear");
+    const out = $("out");
+    const err = $("err");
+    const st = $("st");
+    const dot = $("dot");
+    const note = $("note");
+    const autoOpen = $("autoOpen");
 
-  const statusDiv = document.getElementById("status");
-  const errorBox = document.getElementById("errorBox");
+    let lastAnswerText = "";
 
-  const summaryPanel = document.getElementById("summaryPanel");
-  const summaryText  = document.getElementById("summaryText");
-  const summaryMeta  = document.getElementById("summaryMeta");
-
-  const sourcesPanel = document.getElementById("sourcesPanel");
-  const sourcesList  = document.getElementById("sourcesList");
-  const sourcesMeta  = document.getElementById("sourcesMeta");
-
-  let lastAnswer = "";
-
-  clearBtn.onclick = () => {
-    questionInput.value = "";
-    hideAll();
-    questionInput.focus();
-  };
-
-  copyBtn.onclick = async () => {
-    if (!lastAnswer) return;
-    try {
-      await navigator.clipboard.writeText(lastAnswer);
-      toast("✅ تم نسخ الملخص");
-    } catch {
-      toast("❌ لم أستطع النسخ (المتصفح منع)");
-    }
-  };
-
-  // Enter للإرسال (Shift+Enter سطر جديد)
-  questionInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      btn.click();
-    }
-  });
-
-  btn.onclick = async () => {
-    const question = questionInput.value.trim();
-    if (!question) return;
-
-    hideAll();
-    btn.disabled = true;
-    copyBtn.disabled = true;
-
-    setStatus([
-      badge("جاري التنفيذ...", true),
-      badge("API: /api/askora", false)
-    ]);
-
-    try {
-      const res = await fetch("/api/askora", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question })
-      });
-
-      // ✅ اقرأ كنص أولاً ثم حاول JSON
-      const raw = await res.text();
-
-      let data = null;
-      try {
-        data = JSON.parse(raw);
-      } catch (e) {
-        // ❌ السيرفر رجّع HTML/نص
-        showError("Server returned non-JSON:\n\n" + raw.slice(0, 900));
-        setStatus([badge("فشل: رد غير JSON", false)]);
-        return;
-      }
-
-      if (!res.ok || !data || data.ok !== true) {
-        const msg = (data && (data.error || data.message))
-          ? (data.error || data.message)
-          : "خطأ غير معروف";
-        showError(msg);
-        setStatus([badge("فشل الطلب", false)]);
-        return;
-      }
-
-      const answerText = (data.answer ?? "").toString().trim();
-      const note = (data.note ?? "").toString().trim();
-      const intent = (data.intent ?? "").toString().trim();
-
-      // ✅ الملخص
-      lastAnswer = answerText;
-      summaryText.textContent = answerText || "—";
-      summaryMeta.textContent = [
-        note ? ("ℹ️ " + note) : "",
-        intent ? ("• intent: " + intent) : ""
-      ].filter(Boolean).join(" ");
-
-      summaryPanel.style.display = "block";
-      copyBtn.disabled = !answerText;
-
-      // ✅ المصادر
-      const sourcesArr = Array.isArray(data.sources) ? data.sources : [];
-      renderSources(sourcesArr);
-
-      setStatus([
-        badge("تم", true),
-        note ? badge(note, false) : null
-      ].filter(Boolean));
-
-    } catch (err) {
-      showError(String(err?.message || err || "Unknown error"));
-      setStatus([badge("خطأ في الاتصال", false)]);
-    } finally {
-      btn.disabled = false;
-    }
-  };
-
-  function renderSources(sourcesArr) {
-    sourcesList.innerHTML = "";
-
-    const list = (Array.isArray(sourcesArr) ? sourcesArr : []).slice(0, 8);
-
-    if (!list.length) {
-      sourcesPanel.style.display = "none";
-      sourcesMeta.textContent = "";
-      return;
+    function setStatus(ok, text){
+      st.textContent = text || (ok ? "تم" : "خطأ");
+      dot.style.background = ok ? "#22c55e" : "#ef4444";
     }
 
-    sourcesMeta.textContent = `(${list.length})`;
+    function renderResponse(data){
+      out.innerHTML = "";
+      err.style.display = "none";
 
-    list.forEach((s, idx) => {
-      const title = (s && s.title) ? String(s.title) : `مصدر ${idx + 1}`;
-      const link  = (s && (s.link || s.url)) ? String(s.link || s.url) : "";
-      const snip  = (s && (s.content || s.snippet || s.text)) ? String(s.content || s.snippet || s.text) : "";
+      const intent = data?.intent || "general";
+      const actions = Array.isArray(data?.actions) ? data.actions : [];
+      const sources = Array.isArray(data?.sources) ? data.sources : [];
+      const answer = String(data?.answer || "").trim();
+      lastAnswerText = answer;
 
-      const item = document.createElement("div");
-      item.className = "source-item";
+      // Card: Answer + Actions
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <h3>الملخص <span style="color:#9ca3af;font-size:13px;">intent: ${intent}</span></h3>
+        <div class="answer">${escapeHtml(answer)}</div>
+      `;
 
-      const t = document.createElement("div");
-      t.className = "source-title";
-      t.textContent = title;
+      if (actions.length){
+        const aWrap = document.createElement("div");
+        aWrap.className = "actions";
 
-      item.appendChild(t);
+        actions.forEach((a)=>{
+          const url = String(a?.url || "").trim();
+          const label = String(a?.label || "فتح").trim();
+          if (!url) return;
 
-      if (link) {
-        const a = document.createElement("a");
-        a.className = "source-link";
-        a.href = link;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = link;
-        item.appendChild(a);
+          const link = document.createElement("a");
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener";
+
+          const btn = document.createElement("div");
+          btn.className = "actionBtn" + (a?.primary ? " primary" : "");
+          btn.textContent = label;
+
+          link.appendChild(btn);
+          aWrap.appendChild(link);
+        });
+
+        card.appendChild(aWrap);
       }
 
-      if (snip) {
-        const p = document.createElement("div");
-        p.className = "source-snippet";
-        p.textContent = snip.length > 360 ? (snip.slice(0, 360) + "…") : snip;
-        item.appendChild(p);
+      if (sources.length){
+        const s = document.createElement("div");
+        s.className = "src";
+        s.innerHTML = `<div style="margin-bottom:6px;color:#d1d5db;">المصادر (${sources.length})</div>`;
+        sources.slice(0,6).forEach((x)=>{
+          const t = escapeHtml(String(x?.title || "مصدر").trim() || "مصدر");
+          const u = String(x?.link || "").trim();
+          if (u){
+            const p = document.createElement("div");
+            p.innerHTML = `• <a href="${u}" target="_blank" rel="noopener">${t}</a>`;
+            s.appendChild(p);
+          }
+        });
+        card.appendChild(s);
       }
 
-      sourcesList.appendChild(item);
+      out.appendChild(card);
+    }
+
+    function escapeHtml(str){
+      return String(str || "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;");
+    }
+
+    async function ask(){
+      const text = q.value.trim();
+      if (!text) return;
+
+      setStatus(true, "جارٍ...");
+      note.textContent = "—";
+      err.style.display = "none";
+      out.innerHTML = "";
+
+      // ✅ Trick لفتح تبويب بدون ما يمنعه المتصفح (بما أنه من click)
+      let pendingWin = null;
+      if (autoOpen.checked) {
+        pendingWin = window.open("", "_blank");
+      }
+
+      send.disabled = true;
+
+      try{
+        const res = await fetch("/api/askora", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ question: text })
+        });
+
+        // لو صار رد غير JSON
+        const raw = await res.text();
+        let data = null;
+        try { data = JSON.parse(raw); }
+        catch(e){
+          throw new Error("الرد ليس JSON:\n" + raw.slice(0, 200));
+        }
+
+        note.textContent = String(data?.note || "—");
+
+        if (!data?.ok){
+          setStatus(false, "خطأ");
+          err.style.display = "block";
+          err.textContent = (data?.message || data?.error || "Server error");
+          if (pendingWin) pendingWin.close();
+          return;
+        }
+
+        setStatus(true, "تم");
+        renderResponse(data);
+
+        // ✅ فتح تلقائي: لو فيه Action primary + autofire
+        const actions = Array.isArray(data?.actions) ? data.actions : [];
+        const fire = actions.find(a => a?.primary && a?.autofire && a?.url);
+
+        if (pendingWin) {
+          if (fire?.url) pendingWin.location = fire.url;
+          else pendingWin.close();
+        }
+
+      }catch(e){
+        setStatus(false, "خطأ");
+        err.style.display = "block";
+        err.textContent = String(e?.message || e || "error");
+        if (pendingWin) pendingWin.close();
+      }finally{
+        send.disabled = false;
+      }
+    }
+
+    send.addEventListener("click", ask);
+    q.addEventListener("keydown", (e)=>{
+      if (e.key === "Enter" && !e.shiftKey){
+        e.preventDefault();
+        ask();
+      }
     });
 
-    sourcesPanel.style.display = "block";
-  }
+    copy.addEventListener("click", async ()=>{
+      if (!lastAnswerText) return;
+      try{
+        await navigator.clipboard.writeText(lastAnswerText);
+        note.textContent = "✅ تم نسخ الملخص";
+      }catch{
+        note.textContent = "تعذر النسخ";
+      }
+    });
 
-  function hideAll(){
-    errorBox.style.display = "none";
-    errorBox.textContent = "";
-
-    summaryPanel.style.display = "none";
-    summaryText.textContent = "";
-    summaryMeta.textContent = "";
-
-    sourcesPanel.style.display = "none";
-    sourcesList.innerHTML = "";
-    sourcesMeta.textContent = "";
-
-    statusDiv.innerHTML = "";
-    lastAnswer = "";
-  }
-
-  function showError(text){
-    errorBox.style.display = "block";
-    errorBox.textContent = text;
-  }
-
-  function setStatus(badges){
-    statusDiv.innerHTML = "";
-    badges.forEach(b => statusDiv.appendChild(b));
-  }
-
-  function badge(text, ok){
-    const el = document.createElement("span");
-    el.className = "badge";
-    if (ok){
-      const d = document.createElement("span");
-      d.className = "dot";
-      el.appendChild(d);
-    }
-    const t = document.createElement("span");
-    t.textContent = text;
-    el.appendChild(t);
-    return el;
-  }
-
-  function toast(msg){
-    // Toast بسيط
-    const t = document.createElement("div");
-    t.className = "badge";
-    t.style.position = "fixed";
-    t.style.left = "12px";
-    t.style.bottom = "12px";
-    t.style.zIndex = "9999";
-    t.style.maxWidth = "80vw";
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 1700);
-  }
-</script>
-
+    clear.addEventListener("click", ()=>{
+      q.value = "";
+      out.innerHTML = "";
+      err.style.display = "none";
+      note.textContent = "—";
+      setStatus(true, "جاهز");
+    });
+  </script>
 </body>
 </html>
