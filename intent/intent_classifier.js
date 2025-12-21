@@ -1,167 +1,274 @@
 // intent/intent_classifier.js
-// Advanced Intent Classifier (AR + EN)
-// Priority: Intelligence > Speed > Accuracy
+// مصنف نية ذكي (بدون نموذج) + درجة ثقة + كلمات مفتاحية
+// تطوير: تطبيع عربي أقوى + نيات إضافية (customs/deploy) + ثقة أدق + debug اختياري
+
+function stripDiacritics(s = "") {
+  // إزالة التشكيل العربي
+  return String(s).replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
+}
+
+function normalizeArabic(s = "") {
+  // توحيد أشكال الحروف العربية لتقليل اختلاف الكتابة
+  return String(s)
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ـ/g, "");
+}
+
+function norm(s = "") {
+  return normalizeArabic(
+    stripDiacritics(
+      String(s || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\uFFFD/g, "")
+    )
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripPunct(s = "") {
+  return String(s || "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(text = "") {
+  const t = stripPunct(norm(text));
+  if (!t) return [];
+  return t.split(" ").filter(Boolean);
+}
+
+function keywords(question = "") {
+  const parts = tokenize(question);
+
+  const stop = new Set([
+    // عربي شائع
+    "في","على","من","الى","الي","إلى","عن","ما","ماذا","هل","كم","كيف","لماذا","ليش","اين","أين","وين",
+    "هذا","هذه","هذي","ذلك","تلك","هناك","هنا","انا","انت","انتي","هو","هي","هم","هن",
+    "مع","او","و","ثم","بعد","قبل","اذا","إن","لان","لانه","لكن","يعني","تمام","طيب",
+    // EN شائع
+    "the","a","an","is","are","of","to","in","on","for","and","or","what","who","where","how","why"
+  ]);
+
+  const out = [];
+  for (const w of parts) {
+    if (w.length < 2) continue;
+    if (stop.has(w)) continue;
+    if (/^\d{1,2}$/.test(w)) continue;
+    out.push(w);
+  }
+
+  // إزالة التكرار
+  const uniq = [];
+  const seen = new Set();
+  for (const w of out) {
+    if (seen.has(w)) continue;
+    seen.add(w);
+    uniq.push(w);
+  }
+
+  return uniq.slice(0, 12);
+}
+
+function scoreMatch(text, rules) {
+  let score = 0;
+  for (const r of rules) {
+    if (r.re.test(text)) score += r.w;
+  }
+  return score;
+}
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
 
 /**
- * شكل الـ Intent النهائي:
- * {
- *   main_intent,
- *   sub_intent,
- *   question_type,
- *   depth,
- *   requires_sources,
- *   requires_numbers,
- *   temporal,
- *   language,
- *   confidence
- * }
+ * classifyIntent
+ * @param {Object} args
+ * @param {string} args.text
+ * @param {string} args.context
+ * @param {Object} opts
+ * @param {boolean} opts.debug
  */
+export function classifyIntent({ text = "", context = "" } = {}, opts = {}) {
+  const qRaw = String(text || "").trim();
+  const q = norm(qRaw);
+  const ctx = norm(context);
 
-const AR_QUESTION_WORDS = {
-  where: ["أين", "وين"],
-  who: ["من", "مين"],
-  what: ["ما", "ماذا", "ايش"],
-  how: ["كيف"],
-  how_many: ["كم", "عدد"],
-  when: ["متى"],
-  why: ["لماذا", "ليش"],
-  compare: ["قارن", "مقارنة", "الفرق"],
-};
+  // قواعد (Regex + وزن)
+  // إضافة نيات مهمة لمشروع ASKORA:
+  // - deploy: مشاكل Vercel/GitHub/API/Errors
+  // - customs: بند/HS/تعرفة/اسكودا
+  const RULES = {
+    deploy: [
+      { re: /\b(vercel|github|deploy|deployment|build|logs?|runtime|api\/|500|404|cors)\b/i, w: 40 },
+      { re: /\b(نشر|ديبلوي|فيركل|جيتهاب|جيت|اكشنز|build|logs|سجلات|اخطاء|خطا|سيرفر|api)\b/i, w: 40 },
+      { re: /\b(لماذا\s+لا\s+يعمل|ما\s+المشكله|ما\s+هذا\s+الخطا)\b/i, w: 18 },
+    ],
 
-const EN_QUESTION_WORDS = {
-  where: ["where"],
-  who: ["who"],
-  what: ["what"],
-  how: ["how"],
-  how_many: ["how many", "how much"],
-  when: ["when"],
-  why: ["why"],
-  compare: ["compare", "difference", "vs"],
-};
+    customs: [
+      { re: /\b(hs|hs\s*code|harmonized|tariff|customs)\b/i, w: 40 },
+      { re: /\b(بند|التعرفة|تعرفه|جمارك|رسوم|اسكودا|اسيكودا|asycuda)\b/i, w: 40 },
+      { re: /\b(رقم\s+البند|كم\s+بند)\b/i, w: 20 },
+    ],
 
-const DOMAIN_KEYWORDS = {
-  geography: [
-    "دولة","بلد","مدينة","عاصمة","قارة","حدود","موقع","تقع",
-    "country","city","capital","continent","location","located"
-  ],
-  person: [
-    "شخص","رئيس","ملك","نبي","لاعب","مخترع",
-    "person","president","king","player","inventor"
-  ],
-  economy: [
-    "اقتصاد","سعر","تكلفة","راتب","عملة","ناتج",
-    "economy","price","cost","salary","currency","gdp"
-  ],
-  history: [
-    "تاريخ","قديما","سنة","حرب","حدث",
-    "history","year","war","event"
-  ],
-  technology: [
-    "تقنية","ذكاء","برمجة","نظام","تطبيق",
-    "technology","ai","programming","system","app"
-  ],
-  health: [
-    "صحة","مرض","علاج","دواء",
-    "health","disease","treatment","medicine"
-  ]
-};
+    who_is: [
+      { re: /^(من\s+هو|من\s+هي|من)\b/i, w: 45 },
+      { re: /\bwho\s+is\b/i, w: 45 },
+      { re: /\b(sir|mr|mrs|dr)\b/i, w: 10 },
+    ],
 
-function detectLanguage(text) {
-  if (/[ء-ي]/.test(text)) return "ar";
-  if (/[a-zA-Z]/.test(text)) return "en";
-  return "unknown";
-}
+    define: [
+      { re: /^(ما\s+هو|ما\s+هي|ما\s+معنى|اشرح|عرّف|عرف|تعريف)\b/i, w: 42 },
+      { re: /\bwhat\s+is\b/i, w: 42 },
+      { re: /\bmeaning\b/i, w: 15 },
+      { re: /\bdefinition\b/i, w: 15 },
+    ],
 
-function includesAny(text, list) {
-  return list.some(k => text.includes(k));
-}
+    where: [
+      { re: /^(اين)\b/i, w: 45 },
+      { re: /\bwhere\b/i, w: 45 },
+      { re: /\bموقع\b/i, w: 18 },
+      { re: /\bيقع\b/i, w: 15 },
+    ],
 
-function detectQuestionType(text, lang) {
-  const map = lang === "ar" ? AR_QUESTION_WORDS : EN_QUESTION_WORDS;
+    how: [
+      { re: /^(كيف)\b/i, w: 42 },
+      { re: /\bhow\b/i, w: 42 },
+      { re: /\bطريقة\b/i, w: 18 },
+      { re: /\bخطوات\b/i, w: 18 },
+      { re: /\bsetup\b/i, w: 14 },
+      { re: /\binstall\b/i, w: 14 },
+      { re: /\bconfigure\b/i, w: 14 },
+    ],
 
-  for (const [type, words] of Object.entries(map)) {
-    if (includesAny(text, words)) return type;
-  }
-  return "statement";
-}
+    why: [
+      { re: /^(لماذا|ليش)\b/i, w: 45 },
+      { re: /\bwhy\b/i, w: 45 },
+      { re: /\bسبب\b/i, w: 15 },
+    ],
 
-function detectDomain(text) {
-  for (const [domain, words] of Object.entries(DOMAIN_KEYWORDS)) {
-    if (includesAny(text, words)) return domain;
-  }
-  return "general";
-}
+    how_many: [
+      { re: /\bكم\b/i, w: 28 },
+      { re: /\bhow\s+many\b/i, w: 40 },
+      { re: /\bhow\s+much\b/i, w: 35 },
+      { re: /\bعدد\b/i, w: 14 },
+      { re: /\bسعر\b/i, w: 18 },
+      { re: /\bتكلفه\b/i, w: 18 },
+      { re: /\bprice\b/i, w: 14 },
+      { re: /\bcost\b/i, w: 14 },
+    ],
 
-function estimateDepth(text) {
-  if (text.length <= 40) return "short";
-  if (text.length <= 90) return "summary";
-  return "detailed";
-}
+    compare: [
+      { re: /\bالفرق\b/i, w: 28 },
+      { re: /\bقارن\b/i, w: 28 },
+      { re: /\bافضل\b/i, w: 18 },
+      { re: /\bvs\b/i, w: 22 },
+      { re: /\bcompare\b/i, w: 28 },
+      { re: /\bdifference\b/i, w: 28 },
+      { re: /\bwhich\s+is\s+better\b/i, w: 28 },
+    ],
 
-function needsNumbers(text) {
-  return /\d|كم|how many|how much|عدد|سعر/.test(text);
-}
+    translate: [
+      { re: /\bترجم\b/i, w: 40 },
+      { re: /\btranslate\b/i, w: 40 },
+      { re: /\bبالانجليزي\b/i, w: 25 },
+      { re: /\benglish\b/i, w: 15 },
+      { re: /\barabic\b/i, w: 12 },
+    ],
 
-function isTemporal(text) {
-  return includesAny(text, [
-    "متى","اليوم","الآن","سنة","عام",
-    "when","today","now","year"
-  ]);
-}
+    summarize: [
+      { re: /\bتلخيص\b/i, w: 40 },
+      { re: /\bsummary\b/i, w: 40 },
+      { re: /\bsummarize\b/i, w: 40 },
+      { re: /\bاختصر\b/i, w: 28 },
+    ],
 
-export function classifyIntent({ text = "", context = "" } = {}) {
-  const t = String(text || "").toLowerCase();
-  const ctx = String(context || "").toLowerCase();
+    news: [
+      { re: /\bاخر\s+الاخبار\b/i, w: 30 },
+      { re: /\bاخبار\b/i, w: 22 },
+      { re: /\bnews\b/i, w: 30 },
+      { re: /\bbreaking\b/i, w: 18 },
+    ],
 
-  const language = detectLanguage(t);
-  const question_type = detectQuestionType(t, language);
-  const domain = detectDomain(t);
-  const depth = estimateDepth(t);
-
-  let main_intent = domain;
-  let sub_intent = question_type;
-
-  let requires_sources = true;
-  let requires_numbers = needsNumbers(t);
-  let temporal = isTemporal(t);
-
-  // تخصيصات ذكية
-  if (question_type === "where") {
-    main_intent = "geography";
-    sub_intent = "location";
-  }
-
-  if (question_type === "who") {
-    main_intent = "person";
-    sub_intent = "identity";
-  }
-
-  if (question_type === "compare") {
-    main_intent = domain;
-    sub_intent = "comparison";
-  }
-
-  if (question_type === "statement") {
-    requires_sources = false;
-  }
-
-  // حساب ثقة مبدئية
-  let confidence = 0.6;
-  if (question_type !== "statement") confidence += 0.15;
-  if (domain !== "general") confidence += 0.15;
-  if (language !== "unknown") confidence += 0.1;
-
-  if (confidence > 1) confidence = 1;
-
-  return {
-    main_intent,
-    sub_intent,
-    question_type,
-    depth,
-    requires_sources,
-    requires_numbers,
-    temporal,
-    language,
-    confidence,
+    general: [{ re: /.*/i, w: 1 }],
   };
+
+  const scores = {};
+  for (const k of Object.keys(RULES)) {
+    scores[k] = scoreMatch(q, RULES[k]);
+  }
+
+  // تعزيز حسب السياق
+  if (ctx.includes("vercel") || ctx.includes("github") || ctx.includes("deploy") || ctx.includes("api")) {
+    scores.deploy += 10;
+    scores.how += 5;
+  }
+  if (ctx.includes("بند") || ctx.includes("hs") || ctx.includes("جمارك") || ctx.includes("اسكودا") || ctx.includes("اسيكودا")) {
+    scores.customs += 12;
+    scores.how_many += 6;
+    scores.define += 4;
+  }
+
+  // تعزيز من الكلمات المفتاحية داخل السؤال نفسه
+  const kws = keywords(qRaw).join(" ");
+  if (/\b(vercel|deploy|github|logs|api|cors|500|404)\b/i.test(kws)) scores.deploy += 8;
+  if (/\b(hs|بند|جمارك|تعرفه|tariff|customs|اسكودا|اسيكودا)\b/i.test(kws)) scores.customs += 8;
+
+  // اختيار أعلى نية
+  let best = "general";
+  let bestScore = -1;
+  for (const [k, v] of Object.entries(scores)) {
+    if (v > bestScore) {
+      bestScore = v;
+      best = k;
+    }
+  }
+
+  // حساب الثقة (0..1)
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const top1 = sorted[0] || ["general", 0];
+  const top2 = sorted[1] || ["general", 0];
+
+  const margin = Math.max(0, top1[1] - top2[1]);
+  const len = tokenize(qRaw).length;
+
+  let confidence;
+  const s = top1[1];
+
+  if (s >= 55) confidence = 0.92;
+  else if (s >= 45) confidence = 0.86;
+  else if (s >= 35) confidence = 0.78;
+  else if (s >= 25) confidence = 0.68;
+  else if (s >= 15) confidence = 0.58;
+  else confidence = 0.46;
+
+  // فارق النية عن الثانية يزيد الثقة
+  confidence += clamp(margin / 120, 0, 0.22);
+
+  // سؤال قصير جداً يقلل الثقة
+  if (len <= 1) confidence -= 0.12;
+  else if (len === 2) confidence -= 0.06;
+
+  confidence = clamp(confidence, 0.35, 0.98);
+
+  const result = {
+    ok: true,
+    intent: best,
+    confidence,
+    keywords: keywords(qRaw),
+  };
+
+  // debug اختياري فقط (حتى لا يبطّئ ولا يوسّخ الناتج)
+  if (opts && opts.debug) {
+    result.debug = { scores, q, ctx, top1, top2, margin, len };
+  }
+
+  return result;
 }
