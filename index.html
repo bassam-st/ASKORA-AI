@@ -1,137 +1,488 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
   <title>ASKORA AI (Test)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Tahoma,sans-serif;background:#0b0b12;color:#fff}
-    .wrap{max-width:720px;margin:0 auto;padding:28px 14px}
-    .card{background:#121225;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px;box-shadow:0 20px 70px rgba(0,0,0,.4)}
-    h1{margin:10px 0 18px;text-align:center;letter-spacing:.5px}
-    textarea{width:100%;min-height:120px;border-radius:14px;border:1px solid rgba(255,255,255,.12);padding:14px;background:#fff;color:#111;font-size:18px;outline:none}
-    .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
-    button{border:0;border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer}
-    .primary{background:#6d28d9;color:#fff}
-    .ghost{background:rgba(255,255,255,.08);color:#fff}
-    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.08);margin-top:10px}
-    .dot{width:10px;height:10px;border-radius:50%;background:#22c55e}
-    pre{white-space:pre-wrap;word-break:break-word;background:#0f0f1a;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px;margin-top:12px;line-height:1.7}
-    a{color:#93c5fd}
+    :root{
+      --bg:#0f0f14;
+      --card:#161622;
+      --panel:#0b0b12;
+      --text:#ffffff;
+      --muted:#b8b8c9;
+      --border:rgba(255,255,255,.10);
+      --btn:#7c3aed;
+      --btn2:#2a2a3b;
+      --errbg:#2b0b0b;
+      --errtx:#ffb4b4;
+      --ok:#22c55e;
+      --shadow: 0 0 30px rgba(0,0,0,.45);
+      --radius: 14px;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      padding:18px 14px 40px;
+      font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    h1{
+      margin: 10px 0 16px;
+      text-align:center;
+      font-size: 28px;
+      letter-spacing: .3px;
+    }
+
+    .container{
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--card);
+      padding: 16px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    textarea{
+      width:100%;
+      min-height: 120px;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color:#111;
+      resize: vertical;
+      font-size: 16px;
+      outline: none;
+    }
+
+    .row{
+      display:flex;
+      gap:10px;
+      margin-top:10px;
+      align-items:center;
+      justify-content:flex-start;
+      flex-wrap: wrap;
+    }
+
+    button{
+      padding: 11px 18px;
+      font-size: 16px;
+      border-radius: 12px;
+      border: none;
+      cursor:pointer;
+      background: var(--btn);
+      color: #fff;
+      transition: transform .06s ease;
+    }
+    button:active{ transform: scale(.99); }
+    button:disabled{
+      opacity:.6;
+      cursor:not-allowed;
+    }
+
+    .btn-secondary{
+      background: var(--btn2);
+      border: 1px solid var(--border);
+    }
+
+    .status{
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      display:flex;
+      gap:10px;
+      flex-wrap: wrap;
+      align-items:center;
+    }
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      color: #eaeaf5;
+      font-size: 12px;
+    }
+    .dot{
+      width:8px;height:8px;border-radius:50%;
+      background: var(--ok);
+      display:inline-block;
+    }
+
+    .panel{
+      margin-top: 14px;
+      padding: 14px;
+      background: var(--panel);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .panel h2{
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: #e9e9f6;
+      opacity: .95;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap:10px;
+    }
+
+    .panel .content{
+      white-space: pre-wrap;
+      line-height: 1.8;
+      font-size: 15px;
+      color: #fff;
+    }
+
+    .sources-wrap{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .source-item{
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.04);
+      overflow:hidden; /* يمنع خروج النص */
+    }
+
+    .source-title{
+      font-weight: 700;
+      font-size: 14px;
+      margin: 0 0 6px;
+      color: #f4f4ff;
+    }
+
+    .source-link{
+      display:block;
+      color: #9bd3ff;
+      text-decoration: none;
+      direction:ltr;           /* الرابط LTR */
+      unicode-bidi: plaintext; /* يحافظ على ترتيب الرابط */
+      overflow-wrap:anywhere;  /* يكسر الرابط */
+      word-break: break-word;
+      line-height: 1.5;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .source-link:hover{ text-decoration: underline; }
+
+    .source-snippet{
+      color: #d7d7ea;
+      font-size: 13px;
+      line-height: 1.7;
+      opacity: .95;
+    }
+
+    .error{
+      margin-top: 14px;
+      padding: 12px;
+      background: var(--errbg);
+      color: var(--errtx);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      overflow-wrap:anywhere;
+      word-break: break-word;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .muted{
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+      line-height: 1.7;
+      opacity: .95;
+    }
+
+    .tiny{
+      font-size: 12px;
+      opacity: .85;
+    }
+
+    .sep{
+      height:1px;
+      background: rgba(255,255,255,.08);
+      margin: 12px 0;
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>ASKORA AI (Test)</h1>
 
-    <div class="card">
-      <textarea id="q" placeholder="اكتب سؤالك هنا..."></textarea>
+  <h1>ASKORA AI (Test)</h1>
 
-      <div class="row">
-        <button class="primary" id="send">إرسال!</button>
-        <button class="ghost" id="copy">نسخ الملخص</button>
-        <button class="ghost" id="clear">مسح</button>
-      </div>
+  <div class="container">
+    <textarea id="question" placeholder="اكتب سؤالك هنا..."></textarea>
 
-      <div class="pill" id="status" style="display:none">
-        <span class="dot"></span><span id="statusText">تم</span>
-      </div>
+    <div class="row">
+      <button id="askBtn">إرسال</button>
+      <button id="copyBtn" class="btn-secondary" disabled>نسخ الملخص</button>
+      <button id="clearBtn" class="btn-secondary">مسح</button>
+    </div>
 
-      <pre id="out" style="display:none"></pre>
+    <div class="status" id="status"></div>
 
-      <div class="row" id="quickActions" style="display:none;margin-top:10px">
-        <button class="ghost" id="openYalla">فتح يلا كورة (مباريات اليوم)</button>
-      </div>
+    <!-- ✅ الملخص (فوق) -->
+    <div class="panel" id="summaryPanel" style="display:none;">
+      <h2>
+        <span>الملخص</span>
+        <span class="tiny" id="summaryMeta"></span>
+      </h2>
+      <div class="content" id="summaryText"></div>
+    </div>
+
+    <!-- ✅ المصادر (تحت) -->
+    <div class="panel" id="sourcesPanel" style="display:none;">
+      <h2>
+        <span>المصادر</span>
+        <span class="tiny" id="sourcesMeta"></span>
+      </h2>
+      <div class="sources-wrap" id="sourcesList"></div>
+    </div>
+
+    <div id="errorBox" class="error" style="display:none;"></div>
+
+    <div class="muted">
+      ملاحظة: إذا رجع السيرفر رد غير JSON (مثلاً صفحة HTML خطأ)، سيظهر لك محتوى الخطأ هنا بدل رسالة
+      <span class="tiny">Unexpected token</span>.
     </div>
   </div>
 
 <script>
-  const $ = (id)=>document.getElementById(id);
+  const btn = document.getElementById("askBtn");
+  const copyBtn = document.getElementById("copyBtn");
+  const clearBtn = document.getElementById("clearBtn");
 
-  function isMatchesQuery(s){
-    s = (s||"").toLowerCase();
-    // فحص بسيط + يقبل أخطاء شائعة
-    return (
-      s.includes("مباريات") ||
-      s.includes("مباراة") ||
-      s.includes("جدول") ||
-      s.includes("نتائج") ||
-      s.includes("match") ||
-      s.includes("schedule") ||
-      s.includes("fixtures") ||
-      s.includes("مبرايات") || // غلط شائع
-      s.includes("مباتيات")    // غلط شائع
-    );
-  }
+  const questionInput = document.getElementById("question");
 
-  function showStatus(msg){
-    $("status").style.display="inline-flex";
-    $("statusText").textContent=msg;
-  }
+  const statusDiv = document.getElementById("status");
+  const errorBox = document.getElementById("errorBox");
 
-  function showQuickActions(show){
-    $("quickActions").style.display = show ? "flex" : "none";
-  }
+  const summaryPanel = document.getElementById("summaryPanel");
+  const summaryText  = document.getElementById("summaryText");
+  const summaryMeta  = document.getElementById("summaryMeta");
 
-  $("openYalla").onclick = ()=>{
-    window.open("https://www.yallakora.com/match-center", "_blank");
+  const sourcesPanel = document.getElementById("sourcesPanel");
+  const sourcesList  = document.getElementById("sourcesList");
+  const sourcesMeta  = document.getElementById("sourcesMeta");
+
+  let lastAnswer = "";
+
+  clearBtn.onclick = () => {
+    questionInput.value = "";
+    hideAll();
+    questionInput.focus();
   };
 
-  $("clear").onclick = ()=>{
-    $("q").value="";
-    $("out").style.display="none";
-    $("out").textContent="";
-    $("status").style.display="none";
-    showQuickActions(false);
-  };
-
-  $("copy").onclick = async ()=>{
-    const txt = $("out").textContent || "";
-    if(!txt) return;
-    try{
-      await navigator.clipboard.writeText(txt);
-      showStatus("تم النسخ ✅");
-    }catch{
-      showStatus("لم يتم النسخ (المتصفح منع) ❌");
+  copyBtn.onclick = async () => {
+    if (!lastAnswer) return;
+    try {
+      await navigator.clipboard.writeText(lastAnswer);
+      toast("✅ تم نسخ الملخص");
+    } catch {
+      toast("❌ لم أستطع النسخ (المتصفح منع)");
     }
   };
 
-  $("send").onclick = async ()=>{
-    const question = $("q").value.trim();
-    if(!question){ showStatus("اكتب سؤال أولاً"); return; }
+  // Enter للإرسال (Shift+Enter سطر جديد)
+  questionInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      btn.click();
+    }
+  });
 
-    showStatus("جاري...");
+  btn.onclick = async () => {
+    const question = questionInput.value.trim();
+    if (!question) return;
 
-    // ✅ إظهار زر يلا كورة مباشرة إذا السؤال مباريات
-    showQuickActions(isMatchesQuery(question));
+    hideAll();
+    btn.disabled = true;
+    copyBtn.disabled = true;
 
-    try{
+    setStatus([
+      badge("جاري التنفيذ...", true),
+      badge("API: /api/askora", false)
+    ]);
+
+    try {
       const res = await fetch("/api/askora", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question })
       });
 
-      const data = await res.json();
+      // ✅ اقرأ كنص أولاً ثم حاول JSON
+      const raw = await res.text();
 
-      const answer = (data && data.answer) ? String(data.answer) : "لا توجد إجابة.";
-      const intent  = (data && data.intent) ? String(data.intent) : "";
-
-      $("out").style.display="block";
-      $("out").textContent = answer;
-
-      // ✅ لو intent schedule من السيرفر، نظهر زر يلا كورة حتى لو السؤال مكتوب غريب
-      if(intent === "schedule"){
-        showQuickActions(true);
+      let data = null;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        // ❌ السيرفر رجّع HTML/نص
+        showError("Server returned non-JSON:\n\n" + raw.slice(0, 900));
+        setStatus([badge("فشل: رد غير JSON", false)]);
+        return;
       }
 
-      showStatus("تم ✅");
-    }catch(e){
-      $("out").style.display="block";
-      $("out").textContent = "خطأ اتصال بالسيرفر: " + (e?.message || e);
-      showStatus("خطأ ❌");
+      if (!res.ok || !data || data.ok !== true) {
+        const msg = (data && (data.error || data.message))
+          ? (data.error || data.message)
+          : "خطأ غير معروف";
+        showError(msg);
+        setStatus([badge("فشل الطلب", false)]);
+        return;
+      }
+
+      const answerText = (data.answer ?? "").toString().trim();
+      const note = (data.note ?? "").toString().trim();
+      const intent = (data.intent ?? "").toString().trim();
+
+      // ✅ الملخص
+      lastAnswer = answerText;
+      summaryText.textContent = answerText || "—";
+      summaryMeta.textContent = [
+        note ? ("ℹ️ " + note) : "",
+        intent ? ("• intent: " + intent) : ""
+      ].filter(Boolean).join(" ");
+
+      summaryPanel.style.display = "block";
+      copyBtn.disabled = !answerText;
+
+      // ✅ المصادر
+      const sourcesArr = Array.isArray(data.sources) ? data.sources : [];
+      renderSources(sourcesArr);
+
+      setStatus([
+        badge("تم", true),
+        note ? badge(note, false) : null
+      ].filter(Boolean));
+
+    } catch (err) {
+      showError(String(err?.message || err || "Unknown error"));
+      setStatus([badge("خطأ في الاتصال", false)]);
+    } finally {
+      btn.disabled = false;
     }
   };
+
+  function renderSources(sourcesArr) {
+    sourcesList.innerHTML = "";
+
+    const list = (Array.isArray(sourcesArr) ? sourcesArr : []).slice(0, 8);
+
+    if (!list.length) {
+      sourcesPanel.style.display = "none";
+      sourcesMeta.textContent = "";
+      return;
+    }
+
+    sourcesMeta.textContent = `(${list.length})`;
+
+    list.forEach((s, idx) => {
+      const title = (s && s.title) ? String(s.title) : `مصدر ${idx + 1}`;
+      const link  = (s && (s.link || s.url)) ? String(s.link || s.url) : "";
+      const snip  = (s && (s.content || s.snippet || s.text)) ? String(s.content || s.snippet || s.text) : "";
+
+      const item = document.createElement("div");
+      item.className = "source-item";
+
+      const t = document.createElement("div");
+      t.className = "source-title";
+      t.textContent = title;
+
+      item.appendChild(t);
+
+      if (link) {
+        const a = document.createElement("a");
+        a.className = "source-link";
+        a.href = link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = link;
+        item.appendChild(a);
+      }
+
+      if (snip) {
+        const p = document.createElement("div");
+        p.className = "source-snippet";
+        p.textContent = snip.length > 360 ? (snip.slice(0, 360) + "…") : snip;
+        item.appendChild(p);
+      }
+
+      sourcesList.appendChild(item);
+    });
+
+    sourcesPanel.style.display = "block";
+  }
+
+  function hideAll(){
+    errorBox.style.display = "none";
+    errorBox.textContent = "";
+
+    summaryPanel.style.display = "none";
+    summaryText.textContent = "";
+    summaryMeta.textContent = "";
+
+    sourcesPanel.style.display = "none";
+    sourcesList.innerHTML = "";
+    sourcesMeta.textContent = "";
+
+    statusDiv.innerHTML = "";
+    lastAnswer = "";
+  }
+
+  function showError(text){
+    errorBox.style.display = "block";
+    errorBox.textContent = text;
+  }
+
+  function setStatus(badges){
+    statusDiv.innerHTML = "";
+    badges.forEach(b => statusDiv.appendChild(b));
+  }
+
+  function badge(text, ok){
+    const el = document.createElement("span");
+    el.className = "badge";
+    if (ok){
+      const d = document.createElement("span");
+      d.className = "dot";
+      el.appendChild(d);
+    }
+    const t = document.createElement("span");
+    t.textContent = text;
+    el.appendChild(t);
+    return el;
+  }
+
+  function toast(msg){
+    // Toast بسيط
+    const t = document.createElement("div");
+    t.className = "badge";
+    t.style.position = "fixed";
+    t.style.left = "12px";
+    t.style.bottom = "12px";
+    t.style.zIndex = "9999";
+    t.style.maxWidth = "80vw";
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 1700);
+  }
 </script>
+
 </body>
 </html>
