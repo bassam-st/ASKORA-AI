@@ -1,9 +1,5 @@
-// engine/engine_router.js — VINFINITY
-// الهدف: يطلع "ملخص كنموذج" حتى لو LLM غير متوفر.
-// 1) تنظيف + Intent + تصحيح بسيط
-// 2) كاش سريع (TTL) لتسريع الردود
-// 3) Web Search + ترتيب مصادر حسب النية
-// 4) تلخيص ذكي (بدون نموذج) + اختياري LLM لو موجود
+// engine/engine_router.js — V15
+// هدف V15: "إجابة مرتبة كنموذج" + فتح أفضل مصدر + لا يتعطل لو LLM غير متوفر
 
 import { webSearch } from "../tools/web_search.js";
 import { classifyIntent } from "../intent/intent_classifier.js";
@@ -12,7 +8,7 @@ import { evaluateConfidence } from "../answer/confidence_evaluator.js";
 import { getCache, setCache } from "../memory/cache.js";
 import { askoraLLM } from "../llm/askora_llm.js";
 
-export async function routeEngine({ text, text_normalized, context, intent }) {
+export async function routeEngine({ text, text_normalized, context, intent } = {}) {
   const question = String(text || "").trim();
   const qNorm = String(text_normalized || question || "").trim();
   const ctx = String(context || "").trim();
@@ -26,18 +22,14 @@ export async function routeEngine({ text, text_normalized, context, intent }) {
   const finalIntent = String(intent || "").trim() || String(auto?.intent || "general");
   const intentConfidence = Number(auto?.confidence || 0.55);
 
-  // 2) Cache (يحفظ حسب السؤال+النية)
-  const cacheKey = `${finalIntent}::${qNorm}`;
+  // 2) Cache
+  const cacheKey = `V15::${finalIntent}::${qNorm}`;
   const cached = getCache(cacheKey);
   if (cached) {
-    return {
-      ok: true,
-      ...cached,
-      note: (cached.note ? cached.note + " " : "") + "⚡ من الكاش (سريع).",
-    };
+    return { ok: true, ...cached, note: (cached.note ? cached.note + " " : "") + "⚡ من الكاش." };
   }
 
-  // 3) Search query shaping
+  // 3) Query shaping
   const query = buildQuery(qNorm, finalIntent);
 
   // 4) Web Search
@@ -53,8 +45,7 @@ export async function routeEngine({ text, text_normalized, context, intent }) {
   // 5) Confidence
   const conf = evaluateConfidence({ intent: finalIntent, intentConfidence, question: qNorm, sources });
 
-  // 6) Optional LLM (لو موجود مفاتيح GEMINI_API_KEY)
-  // لو فشل/غير موجود: نكمل تلخيص ذكي.
+  // 6) Optional LLM (إذا موجود مفاتيح)
   let llmText = "";
   let llmUsed = false;
 
@@ -74,20 +65,18 @@ export async function routeEngine({ text, text_normalized, context, intent }) {
     // ignore
   }
 
+  // 7) Always produce a clean model-like answer
   const finalText = llmUsed
     ? llmText
     : smartSummarize({
         question,
-        question_normalized: qNorm,
         intent: finalIntent,
-        intentConfidence,
         sources,
-        confidence: conf,
       });
 
   const note = llmUsed
-    ? "✅ تم توليد الإجابة بواسطة LLM (اختياري) + مصادر البحث."
-    : (sources.length ? "✅ تم توليد ملخص ذكي من نتائج البحث." : "⚠️ لا توجد نتائج بحث — تحقق من مفاتيح Google CSE.");
+    ? "✅ تم توليد الإجابة بواسطة LLM + مصادر."
+    : (sources.length ? "✅ تم توليد ملخص مرتب من نتائج البحث." : "⚠️ لا توجد نتائج بحث — تحقق من Google CSE.");
 
   const out = {
     ok: true,
@@ -95,11 +84,11 @@ export async function routeEngine({ text, text_normalized, context, intent }) {
     sources,
     note,
     intent: finalIntent,
-    confidence: conf.level,
+    confidence: conf?.level || "medium",
   };
 
-  // 7) Save cache (TTL)
-  setCache(cacheKey, out, 60 * 10); // 10 دقائق
+  // 10 دقائق TTL
+  setCache(cacheKey, out, 10 * 60 * 1000);
   return out;
 }
 
@@ -108,14 +97,12 @@ function buildQuery(q, intent) {
   if (!text) return text;
 
   if (intent === "schedule") {
-    // هذه أفضل صيغة عشان يجيب مركز المباريات
-    return "جدول مباريات اليوم match center يلا كورة";
+    // 🔥 الأفضل لمركز مباريات اليوم
+    // يضمن يرجّع صفحات match-center بسرعة
+    return "مباريات اليوم yallakora match center";
   }
 
-  if (intent === "news") {
-    return text + " آخر الأخبار";
-  }
-
+  if (intent === "news") return text + " آخر الأخبار";
   return text;
 }
 
@@ -139,7 +126,7 @@ function rankAndCleanSources(input, intent) {
     .sort((a,b) => (b._score||0) - (a._score||0))
     .map(({_score, ...r}) => r);
 
-  // Dedup by link
+  // Dedup
   const seen = new Set();
   const dedup = [];
   for (const s of out) {
@@ -148,6 +135,19 @@ function rankAndCleanSources(input, intent) {
     dedup.push(s);
     if (dedup.length >= 8) break;
   }
+
+  // ✅ ضمان رابط ثابت لمباريات اليوم لو intent=schedule ولم نجد yallakora
+  if (intent === "schedule") {
+    const hasYK = dedup.some(s => (s.link || "").includes("yallakora.com/match-center"));
+    if (!hasYK) {
+      dedup.unshift({
+        title: "مركز المباريات - يلا كورة",
+        link: "https://www.yallakora.com/match-center",
+        content: "جدول مباريات اليوم والنتائج لحظة بلحظة.",
+      });
+    }
+  }
+
   return dedup;
 }
 
@@ -157,13 +157,12 @@ function scoreSource(s, preferDomains = []) {
   if (s?.title) score += 2;
   if (s?.content) score += 2;
 
-  // Prefer by intent
-  for (let i=0;i<preferDomains.length;i++){
+  for (let i = 0; i < preferDomains.length; i++) {
     const d = preferDomains[i];
-    if (host === d || host.endsWith("." + d)) score += (16 - i);
+    if (host === d || host.endsWith("." + d)) score += (20 - i);
   }
 
-  // General trust
+  // ثقة عامة
   if (host.endsWith("wikipedia.org")) score += 6;
   if (host.endsWith("britannica.com")) score += 6;
   if (host.endsWith("reuters.com")) score += 7;
@@ -179,10 +178,10 @@ function getHost(url="") {
 }
 
 function cleanSnippet(s="") {
-  return String(s||"").replace(/\s+/g," ").replace(/\uFFFD/g,"").trim();
+  return String(s || "").replace(/\s+/g, " ").replace(/\uFFFD/g, "").trim();
 }
 
 function clip(s="", max=300) {
-  const t = String(s||"");
-  return t.length <= max ? t : t.slice(0, max-1) + "…";
+  const t = String(s || "");
+  return t.length <= max ? t : t.slice(0, max - 1) + "…";
 }
