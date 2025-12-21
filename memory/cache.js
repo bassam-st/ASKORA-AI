@@ -1,17 +1,17 @@
-// memory/cache.js
-// كاش بسيط داخل الذاكرة (Serverless-safe: يعمل لنفس الـ instance فقط)
+// memory/cache.js — VINFINITY FIX
+// كاش بسيط داخل الذاكرة (Serverless-safe لنفس الـ instance)
 
 const _store = new Map();
 
-export function cacheGet(key) {
+// ===== Aliases متوافقة مع engine_router =====
+export function getCache(key) {
   return _store.get(String(key));
 }
 
-export function cacheSet(key, value, ttlMs = 2 * 60 * 1000) {
+export function setCache(key, value, ttlMs = 2 * 60 * 1000) {
   const k = String(key);
   _store.set(k, value);
 
-  // TTL بسيط
   if (ttlMs > 0) {
     setTimeout(() => {
       _store.delete(k);
@@ -21,6 +21,7 @@ export function cacheSet(key, value, ttlMs = 2 * 60 * 1000) {
   return value;
 }
 
+// ===== API إضافي (اختياري) =====
 export function cacheHas(key) {
   return _store.has(String(key));
 }
