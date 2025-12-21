@@ -1,116 +1,100 @@
-// answer/smart_summarizer.js — VINFINITY
-// يولد "ملخص كنموذج" من snippets + يضيف توجيه ذكي + روابط واضحة.
+// answer/smart_summarizer.js — V15
+// يحول نتائج البحث لرد مرتب "يشبه نموذج" حتى بدون LLM
 
-function clip(s="", max=900){
-  const t = String(s||"").trim();
-  return t.length <= max ? t : t.slice(0, max-1) + "…";
+function clip(s = "", max = 300) {
+  const t = String(s || "").trim();
+  return t.length <= max ? t : t.slice(0, max - 1) + "…";
 }
 
-function host(url=""){
-  try{ return new URL(url).hostname.replace(/^www\./,"").toLowerCase(); }
-  catch{ return ""; }
+function hostOf(url = "") {
+  try { return new URL(url).hostname.replace(/^www\./, "").toLowerCase(); }
+  catch { return ""; }
 }
 
-function pickBestLink(sources, preferHosts=[]){
-  const arr = Array.isArray(sources) ? sources : [];
-  if(!arr.length) return "";
-
-  for (const ph of preferHosts){
-    const found = arr.find(s => {
-      const h = host(s?.link || "");
-      return h === ph || h.endsWith("." + ph);
-    });
-    if(found?.link) return found.link;
-  }
-
-  const any = arr.find(s => String(s?.link || "").trim());
-  return any?.link || "";
+function bestSource(sources = []) {
+  if (!Array.isArray(sources) || !sources.length) return null;
+  // أول مصدر غالبًا مرتب مسبقًا في engine_router
+  return sources[0] || null;
 }
 
-function bullets(lines){
-  return lines.filter(Boolean).map(x => `• ${x}`).join("\n");
+function formatSourcesList(sources = [], limit = 5) {
+  const arr = Array.isArray(sources) ? sources.slice(0, limit) : [];
+  if (!arr.length) return "";
+  return arr
+    .map((s, i) => {
+      const title = clip(s?.title || hostOf(s?.link) || `مصدر ${i + 1}`, 60);
+      const link = String(s?.link || "").trim();
+      return `- ${title}\n  ${link}`;
+    })
+    .join("\n");
 }
 
-function section(title, body){
-  const t = String(title||"").trim();
-  const b = String(body||"").trim();
-  if(!b) return "";
-  return `**${t}**\n${b}\n`;
+function scheduleAnswer({ question, sources }) {
+  const top = bestSource(sources);
+  const topLink = top?.link || "https://www.yallakora.com/match-center";
+
+  // لو ما فيه مصادر: أعطي رابط ثابت مباشرة
+  const open = `✅ افتح مباريات اليوم مباشرة (يلا كورة):\n${topLink || "https://www.yallakora.com/match-center"}`;
+
+  // حاول تمييز هل المستخدم يطلب "مشاهدة/بث" بدل جدول فقط
+  const q = String(question || "");
+  const wantsWatch = /مشاه|بث|لايف|قناه|watch|live/i.test(q);
+
+  const tips = wantsWatch
+    ? [
+        "اكتب اسم المباراة أو الفريق: (ريال مدريد) أو (برشلونة) وسأفتح لك أقرب صفحة/مركز مباريات.",
+        "إذا تريد القنوات الناقلة: اكتب (القنوات الناقلة + اسم المباراة).",
+      ]
+    : [
+        "إذا كتبت اسم فريق (الهلال/ريال مدريد/برشلونة) سأحاول أجلب لك روابط أقرب لمركز مباريات الفريق.",
+        "للحصول على الجدول داخل التطبيق بالكامل نحتاج Sports API (اختياري).",
+      ];
+
+  return [
+    "🧠 **ASKORA — مباريات اليوم**",
+    "",
+    open,
+    "",
+    "### ماذا تقدر تسوي الآن؟",
+    `- ${tips[0]}`,
+    `- ${tips[1]}`,
+    "",
+    sources?.length ? "### مصادر موثوقة:" : "### ملاحظة:",
+    sources?.length ? formatSourcesList(sources, 5) : "لا توجد نتائج بحث كافية الآن.",
+  ].join("\n");
 }
 
-function cleanQ(q=""){
-  return String(q||"").replace(/\s+/g," ").trim();
+function generalAnswer({ question, sources }) {
+  const top = bestSource(sources);
+  const topLink = top?.link ? `\n🔗 أفضل مصدر:\n${top.link}` : "";
+
+  // فقرة موجزة من أفضل snippet
+  const snippet = top?.content ? clip(top.content, 320) : "";
+
+  const body = snippet
+    ? `📌 **خلاصة سريعة:**\n${snippet}`
+    : "📌 **خلاصة سريعة:** لم أجد نصوصًا كافية من البحث لتلخيص واضح.";
+
+  return [
+    "🧠 **ASKORA — ملخص ذكي**",
+    "",
+    `**سؤالك:** ${clip(question, 140)}`,
+    "",
+    body,
+    topLink,
+    "",
+    sources?.length ? "### مصادر:" : "### مصادر:",
+    sources?.length ? formatSourcesList(sources, 5) : "لا توجد مصادر — تحقق من إعدادات البحث.",
+  ].join("\n");
 }
 
 export function smartSummarize({
-  question,
-  question_normalized,
-  intent="general",
-  sources=[],
-  confidence
+  question = "",
+  intent = "general",
+  sources = [],
 } = {}) {
-  const q = cleanQ(question);
-  const qn = cleanQ(question_normalized || q);
-  const src = Array.isArray(sources) ? sources : [];
-  const confScore = Number(confidence?.score || 0.55);
-  const confLabel = confScore >= 0.78 ? "ثقة عالية" : confScore >= 0.56 ? "ثقة متوسطة" : "ثقة منخفضة";
-
   if (intent === "schedule") {
-    const matchCenter = pickBestLink(src, ["yallakora.com"]) || "https://www.yallakora.com/match-center";
-    const tips = bullets([
-      "افتح الرابط الآن لعرض مباريات اليوم مباشرة.",
-      "اكتب اسم الفريق + (اليوم) لو تبغى تخصيص: مثال (الهلال اليوم) أو (ريال مدريد اليوم).",
-      "لو تبغى النتائج بدل الجدول: اكتب (نتائج اليوم)."
-    ]);
-
-    return [
-      "✅ **مباريات اليوم ⚽**",
-      `🔗 رابط مباشر:\n${matchCenter}`,
-      "",
-      section("كيف فهمت سؤالك؟", bullets([
-        `السؤال: ${q || qn || "—"}`,
-        `النية: schedule — ${confLabel}`
-      ])),
-      section("ماذا تعمل الآن؟", tips),
-      section("ملاحظة مهمة", "لعرض الجدول داخل التطبيق (وقت/قنوات/نتيجة) نحتاج Sports API (إضافة اختيارية).")
-    ].filter(Boolean).join("\n");
+    return scheduleAnswer({ question, sources });
   }
-
-  if (intent === "news") {
-    const items = src.slice(0, 6).map((s, i) => {
-      const t = (s?.title || "").trim() || `خبر ${i+1}`;
-      const l = (s?.link || "").trim();
-      return l ? `• ${t}\n  ${l}` : `• ${t}`;
-    }).join("\n");
-
-    return [
-      "📰 **روابط أخبار مقترحة**",
-      items || "لا توجد نتائج واضحة الآن.",
-      "",
-      section("اقتراح لتحسين الدقة", "اكتب: (أخبار + اسم الشخص/الدولة/الشركة).")
-    ].join("\n");
-  }
-
-  // General / define / where / etc.
-  const top = src.slice(0, 4);
-  const snippets = top
-    .map(s => String(s?.content || "").trim())
-    .filter(Boolean)
-    .map(x => clip(x, 320));
-
-  const bestLink = pickBestLink(src, ["wikipedia.org","britannica.com"]) || (src[0]?.link || "");
-
-  const main = snippets.length ? bullets(snippets) : "لم أجد محتوى كافي من البحث. جرّب صياغة أخرى أو كلمات أكثر تحديداً.";
-
-  return [
-    "🧠 **ملخص ذكي**",
-    main,
-    "",
-    bestLink ? `🔗 **أفضل مصدر مرجعي:**\n${bestLink}` : "",
-    "",
-    section("فهم السؤال", bullets([
-      `السؤال: ${q || qn || "—"}`,
-      `النية: ${String(intent)} — ${confLabel}`
-    ]))
-  ].filter(Boolean).join("\n");
+  return generalAnswer({ question, sources });
 }
