@@ -19,12 +19,16 @@ export async function routeEngine({ text, intent, context }) {
       final: "السؤال فارغ.",
       sources: [],
       note: "تم رفض الطلب لأن السؤال فارغ.",
+      actions: [],
     });
   }
 
-  // ✅ Intent تلقائي (يشمل schedule + booster)
   const auto = classifyIntent({ text: question, context: safeContext });
   const finalIntent = safeIntent || (auto?.intent || "general");
+  const confidence = Number(auto?.confidence || 0.5);
+
+  // ✅ Actions جاهزة حسب النية
+  const actions = buildActions({ question, intent: finalIntent, confidence });
 
   // 1) الذاكرة الطويلة أولاً
   try {
@@ -37,25 +41,22 @@ export async function routeEngine({ text, intent, context }) {
         final: String(mem.answer),
         sources: [{ title: "Long-term memory", content: String(mem.answer), link: "" }],
         note: "تمت الإجابة من الذاكرة الطويلة.",
+        actions,
       });
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 
   // 2) بحث الويب
   let sourcesRaw = [];
   try {
-    // schedule يحتاج مصادر أكثر شوية
-    const n = finalIntent === "schedule" ? 8 : 6;
-    sourcesRaw = await webSearch(question, { num: n });
+    sourcesRaw = await webSearch(question, { num: finalIntent === "schedule" ? 8 : 6 });
   } catch {
     sourcesRaw = [];
   }
 
   const sources = normalizeSources(sourcesRaw);
 
-  // 3) محاولة LLM (Gemini) - قد يفشل بسبب quota
+  // 3) محاولة Gemini
   let llm = null;
   try {
     llm = await askoraLLM({
@@ -68,7 +69,7 @@ export async function routeEngine({ text, intent, context }) {
     llm = { ok: false, text: "", error: cleanErr(e) };
   }
 
-  // 4) النتيجة النهائية
+  // 4) نص النهائي
   let finalText = "";
   let note = "";
 
@@ -83,8 +84,8 @@ export async function routeEngine({ text, intent, context }) {
     });
 
     note = llm?.error
-      ? "تعذر تشغيل Gemini حالياً. تم استخدام تلخيص ذكي مخصص حسب النية من نتائج البحث."
-      : "تم استخدام تلخيص ذكي مخصص حسب النية من نتائج البحث.";
+      ? "تعذر تشغيل Gemini حالياً. تم استخدام تلخيص ذكي من نتائج البحث."
+      : "تم استخدام تلخيص ذكي من نتائج البحث.";
   }
 
   return buildAnswer({
@@ -94,9 +95,50 @@ export async function routeEngine({ text, intent, context }) {
     final: finalText,
     sources,
     note,
+    actions,
   });
 }
 
+// ✅ يبني Actions حسب النية (هذا قلب مستوى B)
+function buildActions({ question = "", intent = "general", confidence = 0.5 } = {}) {
+  const q = String(question || "").toLowerCase();
+
+  // مباريات اليوم
+  if (intent === "schedule") {
+    // روابط موثوقة وسريعة
+    const yalla = "https://www.yallakora.com/match-center";
+    const filgoal = "https://www.filgoal.com/matches";
+    const kooora = "https://www.kooora.com/";
+
+    // لو المستخدم كتب فريق: نفتح بحث داخل يلا كورة
+    // (حل بسيط وسريع بدل parsing معقد)
+    const teamHint =
+      q.includes("الهلال") || q.includes("النصر") || q.includes("الاتحاد") || q.includes("برشلونة") || q.includes("ريال")
+        ? `https://www.yallakora.com/search?query=${encodeURIComponent(question)}`
+        : "";
+
+    const out = [
+      { type: "open_url", label: "⚽ فتح مباريات اليوم (يلا كورة)", url: yalla, primary: true },
+      { type: "open_url", label: "📊 مباريات اليوم (FilGoal)", url: filgoal, primary: false },
+      { type: "open_url", label: "📰 كرة (Kooora)", url: kooora, primary: false },
+    ];
+
+    if (teamHint) {
+      out.unshift({ type: "open_url", label: "🔎 بحث عن فريق/مباراة في يلا كورة", url: teamHint, primary: true });
+    }
+
+    // لو الثقة عالية نسمح للواجهة تفتح تلقائيًا
+    out.forEach((a) => (a.autofire = confidence >= 0.75 && !!a.primary));
+    return out;
+  }
+
+  return [];
+}
+
+/**
+ * يوحّد شكل المصادر:
+ * { title: string, content: string, link: string }
+ */
 function normalizeSources(input) {
   const arr = Array.isArray(input)
     ? input
@@ -109,17 +151,12 @@ function normalizeSources(input) {
     "twitter.com",
     "tiktok.com",
     "instagram.com",
-    "pinterest.com",
-    "snapchat.com",
-    "threads.net",
   ];
 
   const cleaned = arr
     .filter(Boolean)
     .map((s) => {
-      if (typeof s === "string") {
-        return { title: "", content: s, link: "" };
-      }
+      if (typeof s === "string") return { title: "", content: s, link: "" };
 
       if (typeof s === "object" && s) {
         const title = String(s.title || s.name || "").trim();
