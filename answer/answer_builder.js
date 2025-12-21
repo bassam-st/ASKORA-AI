@@ -6,6 +6,7 @@ export function buildAnswer({
   final = "",
   sources = [],
   note = "",
+  confidence = null,
 } = {}) {
   let safeSources = [];
   if (Array.isArray(sources)) safeSources = sources;
@@ -28,10 +29,11 @@ export function buildAnswer({
   return {
     ok: true,
     question: String(question || ""),
-    intent: String(intent || ""),
-    context: String(context || ""),
+    intent,
+    context,
     answer: String(final || ""),
     sources: cleanedSources,
     note: String(note || ""),
+    confidence,
   };
 }
