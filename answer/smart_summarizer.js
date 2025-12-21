@@ -1,124 +1,83 @@
 // answer/smart_summarizer.js
-// Smart Summarizer v3
-// ✅ schedule: يعطي "زر فتح يلا كورة" + فهم ناقص/زائد
-// ✅ يرجع نص مرتب جدًا + روابط جاهزة
+// Smart Summarizer v2 (بدون نموذج)
+// هدفه: إجابة قصيرة مرتبة + لا يهلوس + يعتمد على snippets فقط
 
-function clean(s = "") {
-  return String(s || "").replace(/\s+/g, " ").replace(/\uFFFD/g, "").trim();
-}
-
-function clip(s = "", max = 350) {
-  const t = clean(s);
+function clip(s = "", max = 400) {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
   if (t.length <= max) return t;
   return t.slice(0, max - 1) + "…";
 }
 
-function extractTeamOrLeague(q = "") {
-  // نأخذ كلمات ذات معنى من السؤال لاستخدامها في بحث يلا كورة
-  const text = clean(q)
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!text) return "";
-
-  // كلمات يجب تجاهلها
-  const stop = new Set([
-    "مباريات","مباراة","اليوم","الان","الآن","بكرة","غدا","غداً","جدول","نتائج","ترتيب",
-    "كرة","القدم","الدوري","كاس","كأس","متى","ماهي","ايش","وش","هل","كم","كيف","وين","أين","اين"
-  ]);
-
-  const words = text.split(" ").filter(Boolean);
-  const keep = [];
-  for (const w of words) {
-    if (w.length < 2) continue;
-    if (stop.has(w)) continue;
-    keep.push(w);
-  }
-
-  // نرجع 3 كلمات كحد أقصى للبحث
-  return keep.slice(0, 3).join(" ");
-}
-
-function buildYallaLinks(question = "") {
-  // رابط مباريات اليوم (مركز المباريات)
-  const todayCenter = "https://www.yallakora.com/match-center";
-
-  // رابط بحث داخل يلا كورة (لو المستخدم ذكر فريق/دوري)
-  const key = extractTeamOrLeague(question);
-  const search = key
-    ? `https://www.yallakora.com/search?query=${encodeURIComponent(key)}`
-    : "";
-
-  return { todayCenter, search, key };
-}
-
-function pickSources(sources = [], n = 4) {
-  const arr = Array.isArray(sources) ? sources : [];
-  const out = [];
+function uniq(arr = []) {
   const seen = new Set();
-  for (const s of arr) {
-    if (!s) continue;
-    const link = clean(s.link);
-    if (link && seen.has(link)) continue;
-    if (link) seen.add(link);
-    out.push({
-      title: clean(s.title),
-      link,
-      content: clip(s.content, 220),
-    });
-    if (out.length >= n) break;
+  const out = [];
+  for (const x of arr) {
+    const k = String(x || "").trim();
+    if (!k) continue;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
   }
   return out;
 }
 
+function pickTopSnippets(sources = [], { maxItems = 3 } = {}) {
+  const items = Array.isArray(sources) ? sources : [];
+  const scored = items
+    .map((s) => {
+      const title = String(s?.title || "").trim();
+      const content = String(s?.content || "").trim();
+      const link = String(s?.link || "").trim();
+      const len = content.length;
+      const score = (title ? 5 : 0) + Math.min(25, Math.floor(len / 25));
+      return { title, content, link, score };
+    })
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  return scored.slice(0, maxItems);
+}
+
 export function smartSummarize({ question = "", intent = "general", sources = [] } = {}) {
-  const q = clean(question);
-  const it = String(intent || "general").toLowerCase().trim();
+  const q = String(question || "").trim();
+  const it = String(intent || "general").trim();
 
-  const picked = pickSources(sources, 4);
-
-  // ✅ نية المباريات/الجدول
+  // ✅ حالة المباريات: لا نطول (الواجهة ستعرض زر فتح مباشر)
   if (it === "schedule") {
-    const { todayCenter, search, key } = buildYallaLinks(q);
-
     return [
-      `📅 **مباريات اليوم**`,
-      q ? `سؤالك: **${q}**` : "",
+      "⚽ **مباريات اليوم**",
+      "✅ افتح مركز المباريات مباشرة من الزر (يلا كورة).",
       "",
-      `✅ افتح مباريات اليوم مباشرة (يلا كورة):`,
-      `${todayCenter}`,
-      "",
-      key
-        ? `🔎 بحث سريع داخل يلا كورة عن: **${key}**\n${search}`
-        : `✍️ إذا كتبت اسم فريق/دوري (مثال: الهلال / ريال مدريد) سأفتح لك البحث مباشرة.`,
-      "",
-      "### ملاحظة",
-      "التطبيق حالياً يعتمد على روابط موثوقة + تلخيص،",
-      "ولو تريد *قائمة المباريات داخل التطبيق* (المباراة + الوقت + البطولة) لازم نربط Sports API (أفضل).",
-      "",
-      "### مصادر إضافية (اختياري)",
-      picked.length
-        ? picked.map((s) => `• ${s.title || "مصدر"}\n  ${s.link || ""}`.trim()).join("\n")
-        : "• لا توجد مصادر إضافية.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+      "_ملاحظة: لعرض قائمة المباريات داخل التطبيق (الوقت/الفرق) نحتاج Sports API._",
+    ].join("\n");
   }
 
-  // عام
-  const top = picked[0]?.content || "";
+  const top = pickTopSnippets(sources, { maxItems: 3 });
+
+  if (!top.length) {
+    return [
+      "لم أجد مصادر كافية في البحث الآن.",
+      q ? `سؤالك: **${clip(q, 120)}**` : "",
+      "جرّب إعادة صياغة السؤال أو إضافة تفاصيل بسيطة.",
+    ].filter(Boolean).join("\n");
+  }
+
+  const bullets = [];
+  for (const t of top) {
+    const line = clip(t.content, 220);
+    if (line) bullets.push(`- ${line}`);
+  }
+
+  const titles = uniq(top.map((x) => x.title).filter(Boolean)).slice(0, 2);
+
+  const header = titles.length
+    ? `**خلاصة من مصادر متعددة** (مثل: ${titles.map((x) => `“${clip(x, 40)}”`).join("، ")})`
+    : "**خلاصة من مصادر متعددة**";
+
   return [
-    "🧠 **ملخص**",
-    q ? `سؤالك: **${q}**` : "",
+    header,
     "",
-    top ? `• ${clip(top, 520)}` : "• لم تظهر مقتطفات كافية من البحث.",
+    ...bullets.slice(0, 4),
     "",
-    "### المصادر",
-    picked.length
-      ? picked.map((s) => `• ${s.title || "مصدر"}\n  ${s.link || ""}`.trim()).join("\n")
-      : "• لا توجد مصادر.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    "إذا تريد إجابة أدق: اكتب جزء/تفصيل إضافي (اسم مكان/اسم شخص/تاريخ).",
+  ].join("\n");
 }
