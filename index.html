@@ -2,32 +2,37 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <title>ASKORA AI (Test)</title>
+  <title>ASKORA AI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; background:#0f0f14; color:#fff; margin:0; padding:20px; }
     h1 { text-align:center; margin:0 0 16px; }
-    .container { max-width:720px; margin:auto; background:#161622; padding:18px; border-radius:12px; box-shadow:0 0 30px rgba(0,0,0,.4); }
-    textarea { width:100%; min-height:110px; padding:12px; border-radius:10px; border:none; resize:vertical; font-size:16px; box-sizing:border-box; }
-    button { margin-top:10px; padding:10px 18px; font-size:16px; border-radius:10px; border:none; cursor:pointer; background:#7c3aed; color:#fff; }
+    .container { max-width:760px; margin:auto; background:#161622; padding:18px; border-radius:12px; box-shadow:0 0 30px rgba(0,0,0,.4); }
+
+    textarea { width:100%; min-height:110px; padding:12px; border-radius:12px; border:none; resize:vertical; font-size:16px; box-sizing:border-box; }
+    button { margin-top:10px; padding:10px 18px; font-size:16px; border-radius:12px; border:none; cursor:pointer; background:#7c3aed; color:#fff; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
 
-    .sectionTitle { margin:14px 0 8px; font-weight:700; opacity:.95; }
-    .box { background:#0b0b12; border-radius:12px; padding:14px; line-height:1.7; }
-    .summary { white-space:pre-wrap; }
+    .sectionTitle { margin:14px 0 8px; font-weight:800; opacity:.95; }
+    .box { background:#0b0b12; border-radius:12px; padding:14px; line-height:1.75; border:1px solid rgba(255,255,255,.06); }
+
+    .summary { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+
     .sourcesWrap { margin-top:10px; display:flex; flex-direction:column; gap:10px; }
     .srcCard { background:#10101a; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:12px; overflow:hidden; }
-    .srcTitle { font-weight:700; margin-bottom:6px; }
-    .srcSnippet { opacity:.92; font-size:14px; line-height:1.6; white-space:pre-wrap; }
+    .srcTitle { font-weight:800; margin-bottom:6px; }
+    .srcSnippet { opacity:.92; font-size:14px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
     .srcLink { display:block; margin-top:8px; font-size:13px; color:#9bd0ff; text-decoration:none; overflow-wrap:anywhere; word-break:break-word; }
-    .note { margin-top:10px; font-size:13px; opacity:0.85; }
 
-    .error { margin-top:16px; padding:12px; background:#2b0b0b; color:#ffb4b4; border-radius:10px; font-family:monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .note { margin-top:10px; font-size:13px; opacity:0.9; line-height:1.6; }
+    .chip { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; margin-left:8px; background:rgba(124,58,237,.25); border:1px solid rgba(124,58,237,.35); }
+
+    .error { margin-top:16px; padding:12px; background:#2b0b0b; color:#ffb4b4; border-radius:12px; font-family:monospace; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
   </style>
 </head>
 <body>
 
-  <h1>ASKORA AI (Test)</h1>
+  <h1>ASKORA AI</h1>
 
   <div class="container">
     <textarea id="question" placeholder="اكتب سؤالك هنا..."></textarea>
@@ -55,26 +60,47 @@
         body: JSON.stringify({ question })
       });
 
-      // ✅ مهم: حتى لو السيرفر رجع نص، نحاول نحوله ل JSON بطريقة آمنة
-      const text = await res.text();
+      // ✅ آمن: حتى لو السيرفر رجّع نص
+      const raw = await res.text();
       let data = null;
-      try { data = JSON.parse(text); } catch { data = null; }
+      try { data = JSON.parse(raw); } catch { data = null; }
 
       if (!data || data.ok !== true) {
         const msg = data?.error || data?.message || "خطأ غير معروف (الرد ليس JSON).";
-        resultDiv.innerHTML = `<div class="error">${escapeHtml(msg)}\n\nRAW:\n${escapeHtml(text.slice(0, 800))}</div>`;
+        resultDiv.innerHTML = `<div class="error">${escapeHtml(msg)}\n\nRAW:\n${escapeHtml(raw.slice(0, 900))}</div>`;
         return;
       }
 
       const answerText = String(data.answer ?? "");
       const sourcesArr = Array.isArray(data.sources) ? data.sources : [];
+      const conf = data.confidence || null;
 
+      // --- Summary box (Top) ---
       let html = `
         <div class="sectionTitle">الملخص</div>
         <div class="box summary">${escapeHtml(answerText)}</div>
       `;
 
+      // --- Confidence ---
+      if (conf && typeof conf === "object") {
+        const pct = (typeof conf.score === "number")
+          ? Math.round(conf.score * 100)
+          : null;
+
+        const level = conf.level ? String(conf.level) : "غير معروف";
+        const reason = conf.reason ? String(conf.reason) : "";
+
+        html += `
+          <div class="note">
+            <span class="chip">🔎 الثقة: ${escapeHtml(level)}${pct !== null ? " (" + pct + "%)" : ""}</span>
+            ${reason ? "<div style='margin-top:6px;'>" + escapeHtml(reason) + "</div>" : ""}
+          </div>
+        `;
+      }
+
+      // --- Sources box (Bottom) ---
       html += `<div class="sectionTitle">المصادر</div>`;
+
       if (sourcesArr.length === 0) {
         html += `<div class="box">لا توجد مصادر حالياً.</div>`;
       } else {
@@ -114,6 +140,7 @@
       .replaceAll("'", "&#039;");
   }
   function escapeAttr(str) {
+    // بسيط وآمن للروابط
     return String(str).replaceAll('"', "%22").replaceAll("'", "%27");
   }
 </script>
