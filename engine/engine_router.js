@@ -5,21 +5,13 @@ import { searchLongTerm } from "../memory/memory_store.js";
 import { askoraLLM } from "../llm/askora_llm.js";
 import { smartSummarize } from "../answer/smart_summarizer.js";
 import { classifyIntent } from "../intent/intent_classifier.js";
-import { evaluateConfidence } from "../answer/confidence_evaluator.js";
 
 export async function routeEngine({ text, intent, context }) {
   const question = String(text || "").trim();
   const safeIntent = String(intent || "").trim();
   const safeContext = String(context || "").trim();
 
-  // 0) تحقق
   if (!question) {
-    const confidence = evaluateConfidence({
-      answer: "السؤال فارغ.",
-      sources: [],
-      intent: { confidence: 0.2 },
-    });
-
     return buildAnswer({
       question: "",
       intent: safeIntent,
@@ -27,94 +19,73 @@ export async function routeEngine({ text, intent, context }) {
       final: "السؤال فارغ.",
       sources: [],
       note: "تم رفض الطلب لأن السؤال فارغ.",
-      confidence,
     });
   }
 
-  // 0.1) Intent تلقائي لو مش موجود
+  // ✅ Intent تلقائي (يشمل schedule + booster)
   const auto = classifyIntent({ text: question, context: safeContext });
-
-  // ⬅️ نحافظ على intent النصي القديم إذا كان موجود
-  // ونستخدم auto كـ “نية غنية” للذكاء والثقة
-  const finalIntent = safeIntent || auto?.main_intent || "general";
+  const finalIntent = safeIntent || (auto?.intent || "general");
 
   // 1) الذاكرة الطويلة أولاً
   try {
     const mem = await searchLongTerm(question);
     if (mem?.answer) {
-      const finalText = String(mem.answer);
-
-      const confidence = evaluateConfidence({
-        answer: finalText,
-        sources: [{ title: "Long-term memory", content: finalText, link: "" }],
-        intent: auto || {},
-      });
-
       return buildAnswer({
         question,
         intent: finalIntent,
         context: safeContext,
-        final: finalText,
-        sources: [{ title: "Long-term memory", content: finalText, link: "" }],
+        final: String(mem.answer),
+        sources: [{ title: "Long-term memory", content: String(mem.answer), link: "" }],
         note: "تمت الإجابة من الذاكرة الطويلة.",
-        confidence,
       });
     }
   } catch {
-    // تجاهل مشاكل الذاكرة ولا توقف النظام
+    // ignore
   }
 
-  // 2) بحث الويب (Fallback أساسي)
+  // 2) بحث الويب
   let sourcesRaw = [];
   try {
-    sourcesRaw = await webSearch(question, { num: 6, intent: auto || {} });
+    // schedule يحتاج مصادر أكثر شوية
+    const n = finalIntent === "schedule" ? 8 : 6;
+    sourcesRaw = await webSearch(question, { num: n });
   } catch {
     sourcesRaw = [];
   }
 
-  // 2.1) توحيد وتنظيف المصادر
   const sources = normalizeSources(sourcesRaw);
 
-  // 3) محاولة Gemini (قد يفشل بسبب quota)
-  let llmText = "";
-  let usedGemini = false;
-
+  // 3) محاولة LLM (Gemini) - قد يفشل بسبب quota
+  let llm = null;
   try {
-    const llm = await askoraLLM({
+    llm = await askoraLLM({
       question,
-      intent: finalIntent,     // نص مختصر
+      intent: finalIntent,
       context: safeContext,
       sources,
-      // يمكنك لاحقًا تمرير auto هنا إذا تبي
     });
-
-    if (llm?.ok && String(llm.text || "").trim()) {
-      llmText = String(llm.text).trim();
-      usedGemini = true;
-    }
-  } catch {
-    usedGemini = false;
+  } catch (e) {
+    llm = { ok: false, text: "", error: cleanErr(e) };
   }
 
   // 4) النتيجة النهائية
-  const finalText = usedGemini
-    ? llmText
-    : smartSummarize({
-        question,
-        intent: auto || {}, // ✅ هنا نستخدم الـ intent الغني للتلخيص
-        sources,
-      });
+  let finalText = "";
+  let note = "";
 
-  const note = usedGemini
-    ? "تم توليد الإجابة عبر Gemini."
-    : "تم استخدام تلخيص ذكي من نتائج البحث (Gemini غير متاح حالياً).";
+  if (llm?.ok && String(llm.text || "").trim()) {
+    finalText = String(llm.text).trim();
+    note = "تم توليد الإجابة عبر Gemini.";
+  } else {
+    finalText = smartSummarize({
+      question,
+      intent: finalIntent,
+      sources,
+    });
 
-  // ✅ Confidence
-  const confidence = evaluateConfidence({
-    answer: finalText,
-    sources,
-    intent: auto || {},
-  });
+    note = llm?.error
+      ? "تعذر تشغيل Gemini حالياً. تم استخدام تلخيص ذكي مخصص حسب النية من نتائج البحث."
+      : "تم استخدام تلخيص ذكي مخصص حسب النية من نتائج البحث.";
+  }
 
   return buildAnswer({
     question,
@@ -123,18 +94,25 @@ export async function routeEngine({ text, intent, context }) {
     final: finalText,
     sources,
     note,
-    confidence,
   });
 }
 
-/**
- * يوحّد شكل المصادر ويضمن أنها Array من:
- * { title: string, content: string, link: string }
- */
 function normalizeSources(input) {
   const arr = Array.isArray(input)
     ? input
     : (input && Array.isArray(input.sources) ? input.sources : []);
+
+  const badDomains = [
+    "facebook.com",
+    "m.facebook.com",
+    "x.com",
+    "twitter.com",
+    "tiktok.com",
+    "instagram.com",
+    "pinterest.com",
+    "snapchat.com",
+    "threads.net",
+  ];
 
   const cleaned = arr
     .filter(Boolean)
@@ -152,12 +130,17 @@ function normalizeSources(input) {
 
       return { title: "", content: String(s), link: "" };
     })
+    .filter((s) => {
+      if (!s.link) return true;
+      const u = s.link.toLowerCase();
+      return !badDomains.some((d) => u.includes(d));
+    })
     .map((s) => ({
-      title: clip(s.title, 140),
-      content: clip(cleanSnippet(s.content), 520),
-      link: clip(s.link, 800),
+      title: clip(s.title, 120),
+      content: clip(cleanSnippet(s.content), 420),
+      link: clip(s.link, 500),
     }))
-    .slice(0, 8);
+    .slice(0, 10);
 
   return cleaned;
 }
@@ -173,4 +156,9 @@ function clip(s = "", max = 200) {
   const t = String(s || "");
   if (t.length <= max) return t;
   return t.slice(0, max - 1) + "…";
+}
+
+function cleanErr(e) {
+  const msg = String(e?.message || e || "").trim();
+  return msg.length > 180 ? msg.slice(0, 180) + "…" : msg;
 }
