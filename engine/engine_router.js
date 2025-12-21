@@ -1,201 +1,188 @@
-// engine/engine_router.js
-import { webSearch } from "../tools/web_search.js";
-import { buildAnswer } from "../answer/answer_builder.js";
-import { searchLongTerm } from "../memory/memory_store.js";
-import { askoraLLM } from "../llm/askora_llm.js";
-import { smartSummarize } from "../answer/smart_summarizer.js";
-import { classifyIntent } from "../intent/intent_classifier.js";
+// engine/engine_router.js — VINFINITY
+// الهدف: يطلع "ملخص كنموذج" حتى لو LLM غير متوفر.
+// 1) تنظيف + Intent + تصحيح بسيط
+// 2) كاش سريع (TTL) لتسريع الردود
+// 3) Web Search + ترتيب مصادر حسب النية
+// 4) تلخيص ذكي (بدون نموذج) + اختياري LLM لو موجود
 
-export async function routeEngine({ text, intent, context }) {
+import { webSearch } from "../tools/web_search.js";
+import { classifyIntent } from "../intent/intent_classifier.js";
+import { smartSummarize } from "../answer/smart_summarizer.js";
+import { evaluateConfidence } from "../answer/confidence_evaluator.js";
+import { getCache, setCache } from "../memory/cache.js";
+import { askoraLLM } from "../llm/askora_llm.js";
+
+export async function routeEngine({ text, text_normalized, context, intent }) {
   const question = String(text || "").trim();
-  const safeIntent = String(intent || "").trim();
-  const safeContext = String(context || "").trim();
+  const qNorm = String(text_normalized || question || "").trim();
+  const ctx = String(context || "").trim();
 
   if (!question) {
-    return buildAnswer({
-      question: "",
-      intent: safeIntent,
-      context: safeContext,
-      final: "السؤال فارغ.",
-      sources: [],
-      note: "تم رفض الطلب لأن السؤال فارغ.",
-      actions: [],
-    });
+    return { ok: true, answer: "السؤال فارغ.", sources: [], note: "empty", intent: "general", confidence: "low" };
   }
 
-  const auto = classifyIntent({ text: question, context: safeContext });
-  const finalIntent = safeIntent || (auto?.intent || "general");
-  const confidence = Number(auto?.confidence || 0.5);
+  // 1) Intent
+  const auto = classifyIntent({ text: qNorm, context: ctx });
+  const finalIntent = String(intent || "").trim() || String(auto?.intent || "general");
+  const intentConfidence = Number(auto?.confidence || 0.55);
 
-  // ✅ Actions جاهزة حسب النية
-  const actions = buildActions({ question, intent: finalIntent, confidence });
+  // 2) Cache (يحفظ حسب السؤال+النية)
+  const cacheKey = `${finalIntent}::${qNorm}`;
+  const cached = getCache(cacheKey);
+  if (cached) {
+    return {
+      ok: true,
+      ...cached,
+      note: (cached.note ? cached.note + " " : "") + "⚡ من الكاش (سريع).",
+    };
+  }
 
-  // 1) الذاكرة الطويلة أولاً
-  try {
-    const mem = await searchLongTerm(question);
-    if (mem?.answer) {
-      return buildAnswer({
-        question,
-        intent: finalIntent,
-        context: safeContext,
-        final: String(mem.answer),
-        sources: [{ title: "Long-term memory", content: String(mem.answer), link: "" }],
-        note: "تمت الإجابة من الذاكرة الطويلة.",
-        actions,
-      });
-    }
-  } catch {}
+  // 3) Search query shaping
+  const query = buildQuery(qNorm, finalIntent);
 
-  // 2) بحث الويب
+  // 4) Web Search
   let sourcesRaw = [];
   try {
-    sourcesRaw = await webSearch(question, { num: finalIntent === "schedule" ? 8 : 6 });
+    sourcesRaw = await webSearch(query, { num: 8, intent: finalIntent });
   } catch {
     sourcesRaw = [];
   }
 
-  const sources = normalizeSources(sourcesRaw);
+  const sources = rankAndCleanSources(sourcesRaw, finalIntent);
 
-  // 3) محاولة Gemini
-  let llm = null;
+  // 5) Confidence
+  const conf = evaluateConfidence({ intent: finalIntent, intentConfidence, question: qNorm, sources });
+
+  // 6) Optional LLM (لو موجود مفاتيح GEMINI_API_KEY)
+  // لو فشل/غير موجود: نكمل تلخيص ذكي.
+  let llmText = "";
+  let llmUsed = false;
+
   try {
-    llm = await askoraLLM({
+    const llm = await askoraLLM({
       question,
       intent: finalIntent,
-      context: safeContext,
+      context: ctx,
       sources,
+      confidence: conf,
     });
-  } catch (e) {
-    llm = { ok: false, text: "", error: cleanErr(e) };
+    if (llm?.ok && String(llm.text || "").trim()) {
+      llmText = String(llm.text).trim();
+      llmUsed = true;
+    }
+  } catch {
+    // ignore
   }
 
-  // 4) نص النهائي
-  let finalText = "";
-  let note = "";
+  const finalText = llmUsed
+    ? llmText
+    : smartSummarize({
+        question,
+        question_normalized: qNorm,
+        intent: finalIntent,
+        intentConfidence,
+        sources,
+        confidence: conf,
+      });
 
-  if (llm?.ok && String(llm.text || "").trim()) {
-    finalText = String(llm.text).trim();
-    note = "تم توليد الإجابة عبر Gemini.";
-  } else {
-    finalText = smartSummarize({
-      question,
-      intent: finalIntent,
-      sources,
-    });
+  const note = llmUsed
+    ? "✅ تم توليد الإجابة بواسطة LLM (اختياري) + مصادر البحث."
+    : (sources.length ? "✅ تم توليد ملخص ذكي من نتائج البحث." : "⚠️ لا توجد نتائج بحث — تحقق من مفاتيح Google CSE.");
 
-    note = llm?.error
-      ? "تعذر تشغيل Gemini حالياً. تم استخدام تلخيص ذكي من نتائج البحث."
-      : "تم استخدام تلخيص ذكي من نتائج البحث.";
-  }
-
-  return buildAnswer({
-    question,
-    intent: finalIntent,
-    context: safeContext,
-    final: finalText,
+  const out = {
+    ok: true,
+    answer: finalText,
     sources,
     note,
-    actions,
-  });
+    intent: finalIntent,
+    confidence: conf.level,
+  };
+
+  // 7) Save cache (TTL)
+  setCache(cacheKey, out, 60 * 10); // 10 دقائق
+  return out;
 }
 
-// ✅ يبني Actions حسب النية (هذا قلب مستوى B)
-function buildActions({ question = "", intent = "general", confidence = 0.5 } = {}) {
-  const q = String(question || "").toLowerCase();
+function buildQuery(q, intent) {
+  const text = String(q || "").trim();
+  if (!text) return text;
 
-  // مباريات اليوم
   if (intent === "schedule") {
-    // روابط موثوقة وسريعة
-    const yalla = "https://www.yallakora.com/match-center";
-    const filgoal = "https://www.filgoal.com/matches";
-    const kooora = "https://www.kooora.com/";
-
-    // لو المستخدم كتب فريق: نفتح بحث داخل يلا كورة
-    // (حل بسيط وسريع بدل parsing معقد)
-    const teamHint =
-      q.includes("الهلال") || q.includes("النصر") || q.includes("الاتحاد") || q.includes("برشلونة") || q.includes("ريال")
-        ? `https://www.yallakora.com/search?query=${encodeURIComponent(question)}`
-        : "";
-
-    const out = [
-      { type: "open_url", label: "⚽ فتح مباريات اليوم (يلا كورة)", url: yalla, primary: true },
-      { type: "open_url", label: "📊 مباريات اليوم (FilGoal)", url: filgoal, primary: false },
-      { type: "open_url", label: "📰 كرة (Kooora)", url: kooora, primary: false },
-    ];
-
-    if (teamHint) {
-      out.unshift({ type: "open_url", label: "🔎 بحث عن فريق/مباراة في يلا كورة", url: teamHint, primary: true });
-    }
-
-    // لو الثقة عالية نسمح للواجهة تفتح تلقائيًا
-    out.forEach((a) => (a.autofire = confidence >= 0.75 && !!a.primary));
-    return out;
+    // هذه أفضل صيغة عشان يجيب مركز المباريات
+    return "جدول مباريات اليوم match center يلا كورة";
   }
 
-  return [];
+  if (intent === "news") {
+    return text + " آخر الأخبار";
+  }
+
+  return text;
 }
 
-/**
- * يوحّد شكل المصادر:
- * { title: string, content: string, link: string }
- */
-function normalizeSources(input) {
-  const arr = Array.isArray(input)
-    ? input
-    : (input && Array.isArray(input.sources) ? input.sources : []);
+function rankAndCleanSources(input, intent) {
+  const arr = Array.isArray(input) ? input : [];
+  const bad = ["facebook.com","m.facebook.com","x.com","twitter.com","tiktok.com","instagram.com","pinterest.com","threads.net"];
 
-  const badDomains = [
-    "facebook.com",
-    "m.facebook.com",
-    "x.com",
-    "twitter.com",
-    "tiktok.com",
-    "instagram.com",
-  ];
+  const prefer = intent === "schedule"
+    ? ["yallakora.com","koora.com","filgoal.com","365scores.com","sofascore.com"]
+    : [];
 
-  const cleaned = arr
+  const out = arr
     .filter(Boolean)
-    .map((s) => {
-      if (typeof s === "string") return { title: "", content: s, link: "" };
-
-      if (typeof s === "object" && s) {
-        const title = String(s.title || s.name || "").trim();
-        const content = String(s.content || s.snippet || s.text || "").trim();
-        const link = String(s.link || s.url || "").trim();
-        return { title, content, link };
-      }
-
-      return { title: "", content: String(s), link: "" };
-    })
-    .filter((s) => {
-      if (!s.link) return true;
-      const u = s.link.toLowerCase();
-      return !badDomains.some((d) => u.includes(d));
-    })
     .map((s) => ({
-      title: clip(s.title, 120),
-      content: clip(cleanSnippet(s.content), 420),
-      link: clip(s.link, 500),
+      title: clip(String(s?.title || ""), 140),
+      link: clip(String(s?.link || ""), 700),
+      content: clip(cleanSnippet(String(s?.content || "")), 380),
     }))
-    .slice(0, 10);
+    .filter(s => s.link && !bad.some(d => s.link.toLowerCase().includes(d)))
+    .map(s => ({ ...s, _score: scoreSource(s, prefer) }))
+    .sort((a,b) => (b._score||0) - (a._score||0))
+    .map(({_score, ...r}) => r);
 
-  return cleaned;
+  // Dedup by link
+  const seen = new Set();
+  const dedup = [];
+  for (const s of out) {
+    if (seen.has(s.link)) continue;
+    seen.add(s.link);
+    dedup.push(s);
+    if (dedup.length >= 8) break;
+  }
+  return dedup;
 }
 
-function cleanSnippet(s = "") {
-  return String(s || "")
-    .replace(/\s+/g, " ")
-    .replace(/\uFFFD/g, "")
-    .trim();
+function scoreSource(s, preferDomains = []) {
+  const host = getHost(s?.link || "");
+  let score = 0;
+  if (s?.title) score += 2;
+  if (s?.content) score += 2;
+
+  // Prefer by intent
+  for (let i=0;i<preferDomains.length;i++){
+    const d = preferDomains[i];
+    if (host === d || host.endsWith("." + d)) score += (16 - i);
+  }
+
+  // General trust
+  if (host.endsWith("wikipedia.org")) score += 6;
+  if (host.endsWith("britannica.com")) score += 6;
+  if (host.endsWith("reuters.com")) score += 7;
+  if (host.endsWith("apnews.com")) score += 6;
+  if (host.endsWith("bbc.com")) score += 6;
+
+  return score;
 }
 
-function clip(s = "", max = 200) {
-  const t = String(s || "");
-  if (t.length <= max) return t;
-  return t.slice(0, max - 1) + "…";
+function getHost(url="") {
+  try { return new URL(url).hostname.replace(/^www\./,"").toLowerCase(); }
+  catch { return ""; }
 }
 
-function cleanErr(e) {
-  const msg = String(e?.message || e || "").trim();
-  return msg.length > 180 ? msg.slice(0, 180) + "…" : msg;
+function cleanSnippet(s="") {
+  return String(s||"").replace(/\s+/g," ").replace(/\uFFFD/g,"").trim();
+}
+
+function clip(s="", max=300) {
+  const t = String(s||"");
+  return t.length <= max ? t : t.slice(0, max-1) + "…";
 }
