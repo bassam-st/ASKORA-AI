@@ -1,83 +1,116 @@
-// answer/smart_summarizer.js
-// Smart Summarizer v2 (بدون نموذج)
-// هدفه: إجابة قصيرة مرتبة + لا يهلوس + يعتمد على snippets فقط
+// answer/smart_summarizer.js — VINFINITY
+// يولد "ملخص كنموذج" من snippets + يضيف توجيه ذكي + روابط واضحة.
 
-function clip(s = "", max = 400) {
-  const t = String(s || "").replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  return t.slice(0, max - 1) + "…";
+function clip(s="", max=900){
+  const t = String(s||"").trim();
+  return t.length <= max ? t : t.slice(0, max-1) + "…";
 }
 
-function uniq(arr = []) {
-  const seen = new Set();
-  const out = [];
-  for (const x of arr) {
-    const k = String(x || "").trim();
-    if (!k) continue;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(k);
+function host(url=""){
+  try{ return new URL(url).hostname.replace(/^www\./,"").toLowerCase(); }
+  catch{ return ""; }
+}
+
+function pickBestLink(sources, preferHosts=[]){
+  const arr = Array.isArray(sources) ? sources : [];
+  if(!arr.length) return "";
+
+  for (const ph of preferHosts){
+    const found = arr.find(s => {
+      const h = host(s?.link || "");
+      return h === ph || h.endsWith("." + ph);
+    });
+    if(found?.link) return found.link;
   }
-  return out;
+
+  const any = arr.find(s => String(s?.link || "").trim());
+  return any?.link || "";
 }
 
-function pickTopSnippets(sources = [], { maxItems = 3 } = {}) {
-  const items = Array.isArray(sources) ? sources : [];
-  const scored = items
-    .map((s) => {
-      const title = String(s?.title || "").trim();
-      const content = String(s?.content || "").trim();
-      const link = String(s?.link || "").trim();
-      const len = content.length;
-      const score = (title ? 5 : 0) + Math.min(25, Math.floor(len / 25));
-      return { title, content, link, score };
-    })
-    .sort((a, b) => (b.score || 0) - (a.score || 0));
-
-  return scored.slice(0, maxItems);
+function bullets(lines){
+  return lines.filter(Boolean).map(x => `• ${x}`).join("\n");
 }
 
-export function smartSummarize({ question = "", intent = "general", sources = [] } = {}) {
-  const q = String(question || "").trim();
-  const it = String(intent || "general").trim();
+function section(title, body){
+  const t = String(title||"").trim();
+  const b = String(body||"").trim();
+  if(!b) return "";
+  return `**${t}**\n${b}\n`;
+}
 
-  // ✅ حالة المباريات: لا نطول (الواجهة ستعرض زر فتح مباشر)
-  if (it === "schedule") {
+function cleanQ(q=""){
+  return String(q||"").replace(/\s+/g," ").trim();
+}
+
+export function smartSummarize({
+  question,
+  question_normalized,
+  intent="general",
+  sources=[],
+  confidence
+} = {}) {
+  const q = cleanQ(question);
+  const qn = cleanQ(question_normalized || q);
+  const src = Array.isArray(sources) ? sources : [];
+  const confScore = Number(confidence?.score || 0.55);
+  const confLabel = confScore >= 0.78 ? "ثقة عالية" : confScore >= 0.56 ? "ثقة متوسطة" : "ثقة منخفضة";
+
+  if (intent === "schedule") {
+    const matchCenter = pickBestLink(src, ["yallakora.com"]) || "https://www.yallakora.com/match-center";
+    const tips = bullets([
+      "افتح الرابط الآن لعرض مباريات اليوم مباشرة.",
+      "اكتب اسم الفريق + (اليوم) لو تبغى تخصيص: مثال (الهلال اليوم) أو (ريال مدريد اليوم).",
+      "لو تبغى النتائج بدل الجدول: اكتب (نتائج اليوم)."
+    ]);
+
     return [
-      "⚽ **مباريات اليوم**",
-      "✅ افتح مركز المباريات مباشرة من الزر (يلا كورة).",
+      "✅ **مباريات اليوم ⚽**",
+      `🔗 رابط مباشر:\n${matchCenter}`,
       "",
-      "_ملاحظة: لعرض قائمة المباريات داخل التطبيق (الوقت/الفرق) نحتاج Sports API._",
-    ].join("\n");
-  }
-
-  const top = pickTopSnippets(sources, { maxItems: 3 });
-
-  if (!top.length) {
-    return [
-      "لم أجد مصادر كافية في البحث الآن.",
-      q ? `سؤالك: **${clip(q, 120)}**` : "",
-      "جرّب إعادة صياغة السؤال أو إضافة تفاصيل بسيطة.",
+      section("كيف فهمت سؤالك؟", bullets([
+        `السؤال: ${q || qn || "—"}`,
+        `النية: schedule — ${confLabel}`
+      ])),
+      section("ماذا تعمل الآن؟", tips),
+      section("ملاحظة مهمة", "لعرض الجدول داخل التطبيق (وقت/قنوات/نتيجة) نحتاج Sports API (إضافة اختيارية).")
     ].filter(Boolean).join("\n");
   }
 
-  const bullets = [];
-  for (const t of top) {
-    const line = clip(t.content, 220);
-    if (line) bullets.push(`- ${line}`);
+  if (intent === "news") {
+    const items = src.slice(0, 6).map((s, i) => {
+      const t = (s?.title || "").trim() || `خبر ${i+1}`;
+      const l = (s?.link || "").trim();
+      return l ? `• ${t}\n  ${l}` : `• ${t}`;
+    }).join("\n");
+
+    return [
+      "📰 **روابط أخبار مقترحة**",
+      items || "لا توجد نتائج واضحة الآن.",
+      "",
+      section("اقتراح لتحسين الدقة", "اكتب: (أخبار + اسم الشخص/الدولة/الشركة).")
+    ].join("\n");
   }
 
-  const titles = uniq(top.map((x) => x.title).filter(Boolean)).slice(0, 2);
+  // General / define / where / etc.
+  const top = src.slice(0, 4);
+  const snippets = top
+    .map(s => String(s?.content || "").trim())
+    .filter(Boolean)
+    .map(x => clip(x, 320));
 
-  const header = titles.length
-    ? `**خلاصة من مصادر متعددة** (مثل: ${titles.map((x) => `“${clip(x, 40)}”`).join("، ")})`
-    : "**خلاصة من مصادر متعددة**";
+  const bestLink = pickBestLink(src, ["wikipedia.org","britannica.com"]) || (src[0]?.link || "");
+
+  const main = snippets.length ? bullets(snippets) : "لم أجد محتوى كافي من البحث. جرّب صياغة أخرى أو كلمات أكثر تحديداً.";
 
   return [
-    header,
+    "🧠 **ملخص ذكي**",
+    main,
     "",
-    ...bullets.slice(0, 4),
+    bestLink ? `🔗 **أفضل مصدر مرجعي:**\n${bestLink}` : "",
     "",
-    "إذا تريد إجابة أدق: اكتب جزء/تفصيل إضافي (اسم مكان/اسم شخص/تاريخ).",
-  ].join("\n");
+    section("فهم السؤال", bullets([
+      `السؤال: ${q || qn || "—"}`,
+      `النية: ${String(intent)} — ${confLabel}`
+    ]))
+  ].filter(Boolean).join("\n");
 }
